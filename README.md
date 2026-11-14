@@ -1,39 +1,160 @@
 # quirewise-ebook
 
-Standalone C11 ebook reader package.
+Read-only C11 readers for EPUB/KEPUB, MOBI/AZW3/AZW, FB2, PML, HTMLZ, TXTZ and
+PMLZ files.
 
-CMake target: `Quirewise::Ebook`. Public headers are under `include/quirewise/`.
+`Quirewise::Ebook` (CMake package `QuirewiseEbook`) is an independent,
+MIT-licensed C11 library. It is not dependency-free: its CMake config requires
+the installed `Quirewise::Runtime`, `Quirewise::Archive`, `Quirewise::Data` and
+`Quirewise::Text` packages.
 
-## Capabilities
+## What it does
 
-- **EPUB/KEPUB**: reads the OCF package and chapter XHTML, producing
-  sections/paragraphs/runs with basic styles and links. Styling-only content
-  (`class`/`style` attributes, stylesheet links) is ignored; chapters that need
-  structural layout this package cannot model (tables, lists, images, embedded
-  objects) are skipped. If every spine item is skipped, the parse returns
-  `QW_EBOOK_ERR_UNSUPPORTED`. DRM is unsupported.
-- **MOBI 7 / AZW3 / AZW**: parses the PalmDB/PalmDOC container and returns
-  plain text for uncompressed and PalmDOC-compressed records (CP1252 or UTF-8).
-  HUFF/CDIC compression, DRM, embedded resources and fixed layouts are
-  unsupported; text is flattened to paragraphs.
-- **FB2**: FictionBook 2 XML with headings, paragraphs, emphasis, quotes,
-  poems, links and inline JPEG/PNG/GIF images.
-- **PML**: strips the supported basic PML commands into text.
-- **HTMLZ**: extracts and returns the primary HTML/XHTML member.
-- **TXTZ / PMLZ**: extracts the primary text member (index-first).
+- **EPUB / KEPUB** — opens the OCF ZIP container, follows
+  `META-INF/container.xml` to the OPF package, walks the spine and returns
+  sections, paragraphs and styled text runs. KEPUB books use the same structure.
+  Chapters with content the layout cannot represent (images, tables, lists,
+  SVG, math, media, embedded objects) are skipped; the rest of the book is
+  still returned.
+- **MOBI 7 / AZW3 / AZW** — parses the PalmDB/PalmDOC container and returns
+  plain UTF-8 text for uncompressed and PalmDOC-compressed books whose text is
+  CP1252 or UTF-8. Markup is flattened to paragraphs.
+- **FB2** — parses FictionBook 2 XML and returns an owned UTF-8 HTML document
+  with headings, paragraphs, emphasis, quotes, poems, links and inline
+  JPEG/PNG/GIF images embedded as base64 data URIs.
+- **PML** — strips the supported basic PML commands and returns text.
+- **HTMLZ** — extracts the primary HTML/XHTML member from a ZIP archive.
+- **TXTZ / PMLZ** — extracts the primary text member from a ZIP archive.
 
-## Limits
+Every reader is read-only. There is no EPUB/MOBI/AZW3/FB2 writer, no PDF
+emission, no rendering, no DRM support and no HUFF/CDIC decompression.
 
-All readers are **read-only**: there is no EPUB/DOCX/MOBI writer in this package
-(the "PDF emission" helpers intentionally do not exist here; the document
-package owns PDF output). Per-format size/entry limits are enforced and return
-`QW_EBOOK_ERR_RESOURCE_LIMIT`. MOBI text is capped at 32 MiB and markup is
-flattened. CHM, LIT, LRF, PDB, RB, SNB and TCR are not implemented.
+## Requirements
 
-## Build
+- C11 compiler and CMake 3.21 or newer.
+- Installed Quirewise Runtime, Archive, Data and Text packages, found through
+  `CMAKE_PREFIX_PATH`.
+- CTest for the test suite; no third-party libraries.
 
-```powershell
-cmake -S . -B build
+## Build, test and install
+
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_PREFIX_PATH=/path/to/quirewise/install
 cmake --build build
-ctest --test-dir build
+ctest --test-dir build --output-on-failure
+cmake --install build --prefix /path/to/quirewise/install
 ```
+
+Shared builds are available with `-DQUIREWISE_BUILD_SHARED=ON`.
+
+## Use it from CMake
+
+```cmake
+find_package(QuirewiseEbook CONFIG REQUIRED)
+target_link_libraries(your_app PRIVATE Quirewise::Ebook)
+```
+
+`QuirewiseEbookConfig.cmake` resolves Runtime, Archive, Data and Text as well,
+so the same prefix must expose all of them.
+
+## Quick start
+
+Dump the text of every supported EPUB chapter, given the file bytes loaded with
+your own I/O:
+
+```c
+#include <quirewise/epub.h>
+
+#include <stdio.h>
+
+int dump_epub(const void *data, size_t size)
+{
+    QwEpubDocument *book = NULL;
+    size_t chapter, paragraph, run;
+
+    if (qw_epub_parse(data, size, &book) != QW_EPUB_OK) return 0;
+    for (chapter = 0; chapter < qw_epub_section_count(book); ++chapter) {
+        QwEpubSectionView section;
+        if (qw_epub_section_at(book, chapter, &section) != QW_EPUB_OK) continue;
+        for (paragraph = 0; paragraph < section.paragraph_count; ++paragraph) {
+            QwEpubParagraphView view;
+            if (qw_epub_paragraph_at(book, chapter, paragraph, &view) !=
+                QW_EPUB_OK) continue;
+            for (run = 0; run < view.run_count; ++run) {
+                QwEpubRunView text;
+                if (qw_epub_run_at(book, chapter, paragraph, run, &text) ==
+                        QW_EPUB_OK && text.utf8_text)
+                    fwrite(text.utf8_text, 1u, text.text_size, stdout);
+            }
+            fputc('\n', stdout);
+        }
+    }
+    qw_epub_document_free(book);
+    return 1;
+}
+```
+
+It returns `0` when the input is not a readable EPUB or has no supported
+chapter. The input buffer may be freed after `qw_epub_parse` returns; views
+borrow memory from the document, so free the document last.
+
+## API overview
+
+| Header | Public entry points |
+|---|---|
+| `quirewise/epub.h` | `qw_epub_parse`, `qw_epub_document_free`, `qw_epub_section_count`, `qw_epub_section_at`, `qw_epub_paragraph_at`, `qw_epub_run_at` |
+| `quirewise/mobi.h` | `qw_mobi_probe`, `qw_mobi_parse`, `qw_mobi_document_kind`, `qw_mobi_document_text`, `qw_mobi_document_free` |
+| `quirewise/fb2.h` | `qw_fb2_parse`, `qw_fb2_document_html`, `qw_fb2_document_free` |
+| `quirewise/pml.h` | `qw_pml_abi_version`, `qw_pml_parse`, `qw_pml_document_free`, `qw_pml_status_string` |
+| `quirewise/htmlz.h` | `qw_htmlz_abi_version`, `qw_htmlz_extract_primary_document`, `qw_htmlz_document_free`, `qw_htmlz_status_string` |
+| `quirewise/text_archive.h` | `qw_text_archive_abi_version`, `qw_text_archive_extract_primary`, `qw_text_archive_document_free`, `qw_text_archive_status_string` |
+
+## Behavior and limits
+
+- Input buffers are borrowed for the call. Output is owned by the caller or by
+  the returned document; no function retains an input pointer.
+- EPUB: 16 MiB per XML document, 10,000 spine items, 1,000,000 paragraphs,
+  4,000,000 runs and 256 MiB of layout text. Its ZIP profile allows 1 GiB of
+  input, 10,000 entries, 128 MiB per member and 512 MiB total.
+- EPUB chapters with unsupported structure are skipped. If every chapter is
+  skipped, `qw_epub_parse` returns `QW_EPUB_ERR_UNSUPPORTED`; if none contains
+  text, it returns `QW_EPUB_ERR_FORMAT`. Styling-only markup (`class`, `style`,
+  `<link>`, `<style>`) does not trigger the skip path.
+- MOBI text is capped at 32 MiB. Only compression 1 (none) and 2 (PalmDOC) are
+  accepted, encoding must be CP1252 or UTF-8, encryption must be zero and the
+  MOBI version must be 8 or lower. HUFF/CDIC and DRM return
+  `QW_MOBI_ERROR_UNSUPPORTED`; embedded resources and fixed layouts are ignored
+  and only the text stream is returned. Version 8 books report
+  `QW_MOBI_KIND_AZW3`.
+- FB2 HTML is capped at 64 MiB. Images must be embedded `<binary>` elements
+  with a unique `id`, referenced as `#id`, and typed `image/jpeg`, `image/png`
+  or `image/gif`; anything else fails the parse.
+- PML accepts non-empty input up to 64 MiB and preserves the input byte
+  encoding; it does not transcode to UTF-8.
+- HTMLZ and TXTZ/PMLZ accept archives up to 256 MiB with at most 10,000
+  entries, 64 MiB per member and 256 MiB total uncompressed data. Member names
+  are limited to 4,096 bytes. Index members win first; otherwise the first
+  member with a matching suffix and valid content wins.
+- Error codes are per-format negative enums (`QwEpubStatus`, `QwMobiStatus`,
+  `QwFB2Status`, `QwPmlStatus`, `QwHtmlzStatus`, `QwTextArchiveStatus`), not
+  the shared `QwStatus`. PML, HTMLZ and TXTZ/PMLZ also provide
+  `*_status_string`.
+- There is no global mutable state. Separate documents can be parsed in
+  parallel; a finished document is safe for concurrent read-only traversal as
+  long as no thread frees it.
+
+## Testing
+
+`ctest` runs `quirewise_ebook_fuzz_smoke` (seeded mutations against EPUB, HTMLZ,
+TXTZ, FB2, PML and MOBI) and `quirewise_ebook_mobi_palm_doc` (PalmDOC
+back-references across records and record padding).
+
+## Documentation
+
+See [docs/usage.md](docs/usage.md) for task-oriented recipes, ownership rules,
+status tables and per-format limits.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
