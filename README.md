@@ -7,7 +7,11 @@ CMake target: `Quirewise::Ebook`. Public headers are under `include/quirewise/`.
 ## Capabilities
 
 - **EPUB/KEPUB**: reads the OCF package and chapter XHTML, producing
-  sections/paragraphs/runs with basic styles and links. DRM is unsupported.
+  sections/paragraphs/runs with basic styles and links. Styling-only content
+  (`class`/`style` attributes, stylesheet links) is ignored; chapters that need
+  structural layout this package cannot model (tables, lists, images, embedded
+  objects) are skipped. If every spine item is skipped, the parse returns
+  `QW_EBOOK_ERR_UNSUPPORTED`. DRM is unsupported.
 - **MOBI 7 / AZW3 / AZW**: parses the PalmDB/PalmDOC container and returns
   plain text for uncompressed and PalmDOC-compressed records (CP1252 or UTF-8).
   HUFF/CDIC compression, DRM, embedded resources and fixed layouts are

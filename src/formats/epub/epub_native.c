@@ -795,6 +795,14 @@ static int epub_layout_collect_flow(QwEpubLayoutOwner *owner,
     return QW_EBOOK_OK;
 }
 
+/*
+ * Chapters that carry structural content the layout collector cannot map are
+ * skipped instead of failing the whole book. Styling-only attributes and
+ * elements (class, style, link, style) are not content: the collector already
+ * ignores them, so they must not trigger the compatibility path. Real EPUBs
+ * produced by calibre/Sigil routinely carry a class on every paragraph and a
+ * stylesheet link; rejecting those made the package unusable for actual books.
+ */
 static int epub_layout_requires_legacy(QwXmlNode *nodes, size_t depth)
 {
     QwXmlNode *node;
@@ -803,19 +811,13 @@ static int epub_layout_requires_legacy(QwXmlNode *nodes, size_t depth)
         const char *tag = qw_xml_tag(node);
         if (tag) {
             const char *name = epub_local_name(tag);
-            if (qw_xml_att(node, "class") || qw_xml_att(node, "style") ||
-                strcmp(name, "img") == 0 || strcmp(name, "picture") == 0 ||
+            if (strcmp(name, "img") == 0 || strcmp(name, "picture") == 0 ||
                 strcmp(name, "svg") == 0 || strcmp(name, "table") == 0 ||
                 strcmp(name, "ul") == 0 || strcmp(name, "ol") == 0 ||
                 strcmp(name, "dl") == 0 || strcmp(name, "pre") == 0 ||
                 strcmp(name, "canvas") == 0 || strcmp(name, "iframe") == 0 ||
                 strcmp(name, "object") == 0 || strcmp(name, "video") == 0 ||
-                strcmp(name, "audio") == 0 || strcmp(name, "math") == 0 ||
-                strcmp(name, "style") == 0) return 1;
-            if (strcmp(name, "link") == 0) {
-                const char *rel = qw_xml_att(node, "rel");
-                if (!rel || strstr(rel, "stylesheet")) return 1;
-            }
+                strcmp(name, "audio") == 0 || strcmp(name, "math") == 0) return 1;
         }
         if (epub_layout_requires_legacy(qw_xml_down(node), depth + 1u)) return 1;
     }
@@ -841,6 +843,7 @@ int qw_epub_native_open_layout(const void *data, size_t size,
     size_t container_size = 0u;
     size_t opf_size = 0u;
     size_t chapter_size = 0u;
+    size_t skipped_chapters = 0u;
     char *opf_path = NULL;
     size_t i;
     int archive_open = 0;
@@ -926,9 +929,14 @@ int qw_epub_native_open_layout(const void *data, size_t size,
             goto cleanup;
         }
         if (epub_layout_requires_legacy(qw_xml_root(chapter_xml), 0u)) {
-            rc = epub_set_error(report, QW_EBOOK_ERR_UNSUPPORTED,
-                                "EPUB chapter uses unsupported CSS or layout features; using the compatibility renderer");
-            goto cleanup;
+            /* Skip this chapter, keep the readable remainder of the book. */
+            ++skipped_chapters;
+            qw_xml_drop(chapter_xml);
+            chapter_xml = NULL;
+            free(chapter_data);
+            chapter_data = NULL;
+            chapter_size = 0u;
+            continue;
         }
         body = epub_find_descendant(qw_xml_root(chapter_xml), "body", 0u);
         if (!body) {
@@ -966,8 +974,12 @@ int qw_epub_native_open_layout(const void *data, size_t size,
         chapter_size = 0u;
     }
     if (!owner->section_count) {
-        rc = epub_set_error(report, QW_EBOOK_ERR_FORMAT,
-                            "EPUB spine contains no readable text paragraphs");
+        rc = epub_set_error(
+            report,
+            skipped_chapters ? QW_EBOOK_ERR_UNSUPPORTED : QW_EBOOK_ERR_FORMAT,
+            skipped_chapters
+                ? "EPUB spine has no chapter the structured layout supports"
+                : "EPUB spine contains no readable text paragraphs");
         goto cleanup;
     }
     out_document->sections = owner->sections;
@@ -976,9 +988,16 @@ int qw_epub_native_open_layout(const void *data, size_t size,
     out_document->dispose = epub_layout_owner_dispose;
     owner = NULL;
     if (report) {
-        (void)snprintf(report->note, sizeof(report->note),
-            "EPUB spine parsed into %lu structured chapter(s)",
-            (unsigned long)out_document->section_count);
+        if (skipped_chapters)
+            (void)snprintf(report->note, sizeof(report->note),
+                "EPUB spine parsed into %lu structured chapter(s); %lu "
+                "chapter(s) skipped (unsupported layout features)",
+                (unsigned long)out_document->section_count,
+                (unsigned long)skipped_chapters);
+        else
+            (void)snprintf(report->note, sizeof(report->note),
+                "EPUB spine parsed into %lu structured chapter(s)",
+                (unsigned long)out_document->section_count);
     }
     rc = QW_EBOOK_OK;
 
