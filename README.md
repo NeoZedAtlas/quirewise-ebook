@@ -31,10 +31,14 @@ the installed `Quirewise::Runtime`, `Quirewise::Archive`, `Quirewise::Charset`,
 - **MDD** — parses the MDict resource companion (images, styles, audio) and
   exposes its resource-name/payload pairs, including exact-name lookup.
 - **PML** — strips the supported basic PML commands and returns text.
-- **HTMLZ** — extracts the primary HTML/XHTML member from a ZIP archive.
-- **TXTZ / PMLZ** — extracts the primary text member from a ZIP archive.
+- **HTMLZ** — extracts the primary HTML/XHTML member from a ZIP archive, and
+  writes one with `qw_htmlz_create` (fragments are wrapped in a complete
+  document so the reader can select them).
+- **TXTZ / PMLZ** — extracts the primary text member from a ZIP archive, and
+  writes TXTZ/PMLZ with `qw_text_archive_create`.
 
-Every reader is read-only. There is no EPUB/MOBI/AZW3/FB2/MDX writer, no PDF
+Every reader is read-only except the HTMLZ and TXTZ/PMLZ container writers
+above. There is no EPUB/MOBI/AZW3/FB2/MDX writer, no PDF
 emission, no rendering, no DRM support, no HUFF/CDIC decompression, and no
 MDict engine 1.2 (LZO) or register-code encrypted dictionary support.
 
@@ -118,8 +122,8 @@ borrow memory from the document, so free the document last.
 | `quirewise/mdd.h` | `qw_mdd_probe`, `qw_mdd_parse`, `qw_mdd_document_title`, `qw_mdd_document_resource_count`, `qw_mdd_document_resource_at`, `qw_mdd_document_resource_find`, `qw_mdd_document_free` |
 | `quirewise/fb2.h` | `qw_fb2_parse`, `qw_fb2_document_html`, `qw_fb2_document_free` |
 | `quirewise/pml.h` | `qw_pml_abi_version`, `qw_pml_parse`, `qw_pml_document_free`, `qw_pml_status_string` |
-| `quirewise/htmlz.h` | `qw_htmlz_abi_version`, `qw_htmlz_extract_primary_document`, `qw_htmlz_document_free`, `qw_htmlz_status_string` |
-| `quirewise/text_archive.h` | `qw_text_archive_abi_version`, `qw_text_archive_extract_primary`, `qw_text_archive_document_free`, `qw_text_archive_status_string` |
+| `quirewise/htmlz.h` | `qw_htmlz_abi_version`, `qw_htmlz_extract_primary_document`, `qw_htmlz_document_free`, `qw_htmlz_status_string`, `qw_htmlz_create`, `qw_htmlz_buffer_free` |
+| `quirewise/text_archive.h` | `qw_text_archive_abi_version`, `qw_text_archive_extract_primary`, `qw_text_archive_document_free`, `qw_text_archive_status_string`, `qw_text_archive_create`, `qw_text_archive_buffer_free` |
 
 ## Behavior and limits
 

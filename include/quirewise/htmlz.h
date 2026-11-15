@@ -50,6 +50,14 @@ QUIREWISE_HTMLZ_API QwHtmlzStatus qw_htmlz_extract_primary_document(
     const void *archive_bytes, size_t archive_size, QwHtmlzDocument *out_document,
     const char **out_error);
 QUIREWISE_HTMLZ_API void qw_htmlz_document_free(QwHtmlzDocument *document);
+
+/* Build an HTMLZ archive whose primary member is index.html. The returned
+ * archive is malloc-owned and released with qw_htmlz_buffer_free(). */
+QUIREWISE_HTMLZ_API QwHtmlzStatus qw_htmlz_create(const void *html,
+                                                  size_t html_size,
+                                                  uint8_t **out_archive,
+                                                  size_t *out_size);
+QUIREWISE_HTMLZ_API void qw_htmlz_buffer_free(void *buffer);
 QUIREWISE_HTMLZ_API const char *qw_htmlz_status_string(int status);
 
 #ifdef __cplusplus

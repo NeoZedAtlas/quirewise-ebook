@@ -79,5 +79,13 @@ if(BUILD_TESTING)
     target_link_libraries(quirewise_ebook_mdict_test PRIVATE
         Quirewise::Ebook Quirewise::Compression Quirewise::Crypto)
     add_test(NAME quirewise_ebook_mdict COMMAND quirewise_ebook_mdict_test)
+
+    add_executable(quirewise_ebook_archive_write_test
+        tests/archive_write_test.c)
+    target_compile_features(quirewise_ebook_archive_write_test PRIVATE c_std_11)
+    target_link_libraries(quirewise_ebook_archive_write_test PRIVATE
+        Quirewise::Ebook)
+    add_test(NAME quirewise_ebook_archive_write
+        COMMAND quirewise_ebook_archive_write_test)
 endif()
 target_link_libraries(quirewise_ebook PUBLIC Quirewise::Runtime)

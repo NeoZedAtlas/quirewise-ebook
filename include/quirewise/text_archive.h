@@ -57,6 +57,14 @@ QUIREWISE_TEXT_ARCHIVE_API QwTextArchiveStatus qw_text_archive_extract_primary(
     QwTextArchiveDocument *out_document, const char **out_error);
 QUIREWISE_TEXT_ARCHIVE_API void qw_text_archive_document_free(
     QwTextArchiveDocument *document);
+
+/* Build a TXTZ (index.txt) or PMLZ (index.pml) archive from UTF-8 text.
+ * The returned archive is malloc-owned and released with
+ * qw_text_archive_buffer_free(). */
+QUIREWISE_TEXT_ARCHIVE_API QwTextArchiveStatus qw_text_archive_create(
+    QwTextArchiveKind kind, const void *text, size_t text_size,
+    uint8_t **out_archive, size_t *out_size);
+QUIREWISE_TEXT_ARCHIVE_API void qw_text_archive_buffer_free(void *buffer);
 QUIREWISE_TEXT_ARCHIVE_API const char *qw_text_archive_status_string(int status);
 
 #ifdef __cplusplus
