@@ -88,6 +88,16 @@ target_link_libraries(quirewise_ebook_epub_image_test PRIVATE
     Quirewise::Ebook Quirewise::Compression Quirewise::Crypto)
 add_test(NAME quirewise_ebook_epub_image COMMAND quirewise_ebook_epub_image_test)
 
+add_executable(quirewise_ebook_mdx_mdd_image_test tests/mdx_mdd_image_test.c)
+target_compile_features(quirewise_ebook_mdx_mdd_image_test PRIVATE c_std_11)
+target_compile_definitions(quirewise_ebook_mdx_mdd_image_test PRIVATE
+    QUIREWISE_IMAGES_MDX="${CMAKE_CURRENT_SOURCE_DIR}/tests/data/images.mdx"
+    QUIREWISE_TINY_MDD="${CMAKE_CURRENT_SOURCE_DIR}/tests/data/tiny.mdd")
+target_link_libraries(quirewise_ebook_mdx_mdd_image_test PRIVATE
+    quirewise_ebook)
+add_test(NAME quirewise_ebook_mdx_mdd_image
+    COMMAND quirewise_ebook_mdx_mdd_image_test)
+
 add_executable(quirewise_ebook_mdx_link_test tests/mdx_link_test.c)
 target_compile_features(quirewise_ebook_mdx_link_test PRIVATE c_std_11)
 target_compile_definitions(quirewise_ebook_mdx_link_test PRIVATE

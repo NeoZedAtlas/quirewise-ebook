@@ -1,6 +1,8 @@
 #ifndef QUIREWISE_MDX_H
 #define QUIREWISE_MDX_H
 
+#include "quirewise/mdd.h"
+
 #include <stddef.h>
 #include <stdint.h>
 
@@ -73,6 +75,16 @@ QwMdxStatus qw_mdx_document_entry_at(const QwMdxDocument *document,
 QwMdxStatus qw_mdx_document_html(QwMdxDocument *document,
                                  const uint8_t **out_html,
                                  size_t *out_size);
+/*
+ * Same as qw_mdx_document_html(), but <img src> references are resolved
+ * through a companion MDD document and replaced with data URIs. Passing NULL
+ * behaves like qw_mdx_document_html(). The returned buffer is cached in the
+ * MDX document and must not be freed by the caller.
+ */
+QwMdxStatus qw_mdx_document_html_with_resources(
+    QwMdxDocument *document, const QwMddDocument *resources,
+    const uint8_t **out_html, size_t *out_size);
+
 QwMdxStatus qw_mdx_document_text(QwMdxDocument *document,
                                  const uint8_t **out_text, size_t *out_size);
 

@@ -51,9 +51,21 @@ MDX_LINK_ENTRIES = [
     ("beta", "<p>Beta definition body</p>"),
 ]
 
+MDX_IMAGE_ENTRIES = [
+    ("alpha", '<p>Image definition</p>'
+              '<img src="file:///C:/dict/image.gif" alt="sample"/>'),
+]
+
+# 1x1 red GIF89a used by images.mdx through tiny.mdd.
+TINY_GIF = (
+    b"GIF89a\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00\xff\xff\xff"
+    b"!\xf9\x04\x01\x00\x00\x00\x00,\x00\x00\x00\x00\x01\x00\x01"
+    b"\x00\x00\x02\x02D\x01\x00;"
+)
+
 MDD_ENTRIES = [
     ("\\sample.txt", b"Quirewise sample resource\n"),
-    ("\\image.gif", b"GIF89a" + bytes(range(1, 16))),
+    ("\\image.gif", TINY_GIF),
 ]
 
 
@@ -148,8 +160,11 @@ def main() -> None:
     links = build(False, MDX_HEADER, [(key, record.encode("utf-8"))
                                     for key, record in MDX_LINK_ENTRIES])
     (HERE / "links.mdx").write_bytes(links)
-    print(f"wrote tiny.mdx ({len(mdx)} bytes), tiny.mdd ({len(mdd)} bytes) "
-          f"and links.mdx ({len(links)} bytes)")
+    images = build(False, MDX_HEADER, [(key, record.encode("utf-8"))
+                                    for key, record in MDX_IMAGE_ENTRIES])
+    (HERE / "images.mdx").write_bytes(images)
+    print(f"wrote tiny.mdx ({len(mdx)} bytes), tiny.mdd ({len(mdd)} bytes), "
+          f"links.mdx ({len(links)} bytes) and images.mdx ({len(images)} bytes)")
 
 
 if __name__ == "__main__":

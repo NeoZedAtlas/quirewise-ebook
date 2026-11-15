@@ -112,6 +112,10 @@ const uint8_t *qw_mdict_record_at(const QwMdictContainer *container,
 
 /* Render the whole dictionary as one UTF-8 HTML document; the caller owns the
  * returned buffer and must free it. */
+int qw_mdict_build_html_with_resources(const QwMdictContainer *container,
+                                       const void *mdd_document,
+                                       uint8_t **out_html, size_t *out_size,
+                                       char *error, size_t error_capacity);
 int qw_mdict_build_html(const QwMdictContainer *container, uint8_t **out_html,
                         size_t *out_size, char *error, size_t error_capacity);
 

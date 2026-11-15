@@ -10,6 +10,8 @@
 
 #include "mdict_internal.h"
 
+#include <quirewise/mdd.h>
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -156,6 +158,327 @@ static uint8_t *mdict_strip_entry_scheme(const uint8_t *record, size_t size,
     *out_size = written;
     return stripped;
 }
+
+static int mdict_ascii_equal_ci(const uint8_t *text, size_t size,
+                                const char *word)
+{
+    size_t i;
+    size_t word_size = strlen(word);
+    if (size != word_size) return 0;
+    for (i = 0u; i < size; ++i) {
+        unsigned char a = text[i];
+        unsigned char b = (unsigned char)word[i];
+        if (a >= 'A' && a <= 'Z') a = (unsigned char)(a + 32);
+        if (b >= 'A' && b <= 'Z') b = (unsigned char)(b + 32);
+        if (a != b) return 0;
+    }
+    return 1;
+}
+
+static const char *mdict_image_mime_from_name(const char *name, size_t size)
+{
+    size_t i;
+    const char *dot = NULL;
+    for (i = 0u; i < size; ++i) {
+        if (name[i] == '.') dot = name + i;
+    }
+    if (!dot) return NULL;
+    if (mdict_ascii_equal_ci((const uint8_t *)dot, size - (size_t)(dot - name),
+                             ".png"))
+        return "image/png";
+    if (mdict_ascii_equal_ci((const uint8_t *)dot, size - (size_t)(dot - name),
+                             ".jpg") ||
+        mdict_ascii_equal_ci((const uint8_t *)dot, size - (size_t)(dot - name),
+                             ".jpeg"))
+        return "image/jpeg";
+    if (mdict_ascii_equal_ci((const uint8_t *)dot, size - (size_t)(dot - name),
+                             ".gif"))
+        return "image/gif";
+    if (mdict_ascii_equal_ci((const uint8_t *)dot, size - (size_t)(dot - name),
+                             ".webp"))
+        return "image/webp";
+    if (mdict_ascii_equal_ci((const uint8_t *)dot, size - (size_t)(dot - name),
+                             ".bmp"))
+        return "image/bmp";
+    return NULL;
+}
+
+static int mdict_find_img_src(const uint8_t *tag, size_t size,
+                              size_t *out_start, size_t *out_end)
+{
+    size_t i = 0u;
+    while (i + 4u <= size) {
+        size_t j;
+        if (i != 0u) {
+            unsigned char prev = tag[i - 1u];
+            if (!(prev == ' ' || prev == '\t' || prev == '\r' ||
+                  prev == '\n' || prev == '/'))
+                { ++i; continue; }
+        }
+        if (!((tag[i] == 's' || tag[i] == 'S') &&
+              (tag[i + 1u] == 'r' || tag[i + 1u] == 'R') &&
+              (tag[i + 2u] == 'c' || tag[i + 2u] == 'C'))) {
+            ++i;
+            continue;
+        }
+        j = i + 3u;
+        while (j < size && (tag[j] == ' ' || tag[j] == '\t' ||
+                            tag[j] == '\r' || tag[j] == '\n'))
+            ++j;
+        if (j >= size || tag[j] != '=') { ++i; continue; }
+        ++j;
+        while (j < size && (tag[j] == ' ' || tag[j] == '\t' ||
+                            tag[j] == '\r' || tag[j] == '\n'))
+            ++j;
+        if (j >= size || (tag[j] != '"' && tag[j] != '\'')) { ++i; continue; }
+        {
+            unsigned char quote = tag[j];
+            size_t start = ++j;
+            while (j < size && tag[j] != quote) ++j;
+            if (j >= size) return 0;
+            *out_start = start;
+            *out_end = j;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int mdict_append_base64(QwMdictBuffer *html, const uint8_t *data,
+                               size_t size)
+{
+    static const char alphabet[] =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    size_t i;
+    for (i = 0u; i < size; i += 3u) {
+        uint32_t value = (uint32_t)data[i] << 16;
+        size_t remain = size - i;
+        char encoded[5];
+        if (remain > 1u) value |= (uint32_t)data[i + 1u] << 8;
+        if (remain > 2u) value |= data[i + 2u];
+        encoded[0] = alphabet[(value >> 18) & 63u];
+        encoded[1] = alphabet[(value >> 12) & 63u];
+        encoded[2] = remain > 1u ? alphabet[(value >> 6) & 63u] : '=';
+        encoded[3] = remain > 2u ? alphabet[value & 63u] : '=';
+        encoded[4] = '\0';
+        if (qw_mdict_buffer_append_text(html, encoded) != QW_MDICT_OK)
+            return QW_MDICT_ERR_OUT_OF_MEMORY;
+    }
+    return QW_MDICT_OK;
+}
+
+static int mdict_lookup_image(const QwMddDocument *mdd, const char *value,
+                              size_t value_size, const uint8_t **out_data,
+                              size_t *out_size)
+{
+    const char *base = value;
+    size_t base_size = value_size;
+    size_t i;
+    char candidate[512];
+    for (i = 0u; i < value_size; ++i) {
+        if (value[i] == '\\' || value[i] == '/') {
+            base = value + i + 1u;
+            base_size = value_size - i - 1u;
+        }
+    }
+    if (base_size == 0u || base_size >= sizeof(candidate) - 1u) return 0;
+    if (qw_mdd_document_resource_find(mdd, base, base_size, out_data,
+                                      out_size) == QW_MDD_OK)
+        return 1;
+    candidate[0] = '\\';
+    memcpy(candidate + 1u, base, base_size);
+    if (qw_mdd_document_resource_find(mdd, candidate, base_size + 1u,
+                                      out_data, out_size) == QW_MDD_OK)
+        return 1;
+    candidate[0] = '/';
+    return qw_mdd_document_resource_find(mdd, candidate, base_size + 1u,
+                                         out_data, out_size) == QW_MDD_OK;
+}
+
+static int mdict_append_record_with_images(const QwMddDocument *mdd,
+                                           const uint8_t *record, size_t size,
+                                           QwMdictBuffer *html,
+                                           size_t *embedded_bytes)
+{
+    size_t i = 0u;
+    while (i < size) {
+        size_t chunk_start = i;
+        if (record[i] == '<') {
+            size_t tag_end = i + 1u;
+            while (tag_end < size && record[tag_end] != '>') ++tag_end;
+            if (tag_end >= size) break;
+            if (tag_end > i + 4u &&
+                ((record[i + 1u] == 'i' || record[i + 1u] == 'I') &&
+                 (record[i + 2u] == 'm' || record[i + 2u] == 'M') &&
+                 (record[i + 3u] == 'g' || record[i + 3u] == 'G')) &&
+                (record[i + 4u] == ' ' || record[i + 4u] == '\t' ||
+                 record[i + 4u] == '\r' || record[i + 4u] == '\n' ||
+                 record[i + 4u] == '/')) {
+                size_t value_start = 0u;
+                size_t value_end = 0u;
+                if (mdict_find_img_src(record + i + 1u,
+                                       tag_end - (i + 1u), &value_start,
+                                       &value_end)) {
+                    const uint8_t *data = NULL;
+                    size_t data_size = 0u;
+                    const char *mime;
+                    value_start += i + 1u;
+                    value_end += i + 1u;
+                    mime = mdict_image_mime_from_name(
+                        (const char *)record + value_start,
+                        value_end - value_start);
+                    if (mime && mdd &&
+                        mdict_lookup_image(mdd,
+                                           (const char *)record + value_start,
+                                           value_end - value_start, &data,
+                                           &data_size) &&
+                        data_size > 0u && data_size <= 8u * 1024u * 1024u &&
+                        *embedded_bytes + data_size <= 32u * 1024u * 1024u) {
+                        int status = qw_mdict_buffer_append(
+                            html, record + chunk_start,
+                            value_start - chunk_start);
+                        if (status == QW_MDICT_OK)
+                            status = qw_mdict_buffer_append_text(
+                                html, "data:");
+                        if (status == QW_MDICT_OK)
+                            status = qw_mdict_buffer_append_text(html, mime);
+                        if (status == QW_MDICT_OK)
+                            status = qw_mdict_buffer_append_text(
+                                html, ";base64,");
+                        if (status == QW_MDICT_OK)
+                            status = mdict_append_base64(html, data,
+                                                         data_size);
+                        if (status == QW_MDICT_OK)
+                            status = qw_mdict_buffer_append(
+                                html, record + value_end,
+                                tag_end + 1u - value_end);
+                        if (status != QW_MDICT_OK) return status;
+                        *embedded_bytes += data_size;
+                        i = tag_end + 1u;
+                        continue;
+                    }
+                }
+            }
+            if (qw_mdict_buffer_append(html, record + i,
+                                       tag_end + 1u - i) != QW_MDICT_OK)
+                return QW_MDICT_ERR_OUT_OF_MEMORY;
+            i = tag_end + 1u;
+            continue;
+        }
+        while (i < size && record[i] != '<') ++i;
+        if (qw_mdict_buffer_append(html, record + chunk_start,
+                                   i - chunk_start) != QW_MDICT_OK)
+            return QW_MDICT_ERR_OUT_OF_MEMORY;
+    }
+    return QW_MDICT_OK;
+}
+
+int qw_mdict_build_html_with_resources(const QwMdictContainer *container,
+                                       const void *mdd_document,
+                                       uint8_t **out_html, size_t *out_size,
+                                       char *error, size_t error_capacity)
+{
+    const QwMddDocument *mdd = (const QwMddDocument *)mdd_document;
+    QwMdictBuffer html;
+    int html_records;
+    size_t index;
+    size_t embedded_bytes = 0u;
+    int status = QW_MDICT_OK;
+
+    if (out_html) *out_html = NULL;
+    if (out_size) *out_size = 0u;
+    if (!container || !out_html || !out_size)
+        return QW_MDICT_ERR_INVALID_ARGUMENT;
+    memset(&html, 0, sizeof(html));
+    html.limit = QW_MDICT_MAX_TEXT_BYTES;
+    html_records = mdict_text_is_html(container->meta.format);
+
+    status = qw_mdict_buffer_append_text(&html, "<html><body>\n");
+    if (status == QW_MDICT_OK && container->meta.title &&
+        container->meta.title[0]) {
+        status = qw_mdict_buffer_append_text(&html, "<h1>");
+        if (status == QW_MDICT_OK)
+            status = qw_mdict_append_escaped(
+                &html, (const uint8_t *)container->meta.title,
+                strlen(container->meta.title));
+        if (status == QW_MDICT_OK)
+            status = qw_mdict_buffer_append_text(&html, "</h1>\n");
+    }
+    if (status == QW_MDICT_OK && container->meta.description &&
+        container->meta.description[0]) {
+        status = qw_mdict_buffer_append_text(&html, "<div>");
+        if (status == QW_MDICT_OK && html_records) {
+            status = qw_mdict_buffer_append(
+                &html, container->meta.description,
+                strlen(container->meta.description));
+        } else if (status == QW_MDICT_OK) {
+            status = qw_mdict_append_escaped(
+                &html, (const uint8_t *)container->meta.description,
+                strlen(container->meta.description));
+        }
+        if (status == QW_MDICT_OK)
+            status = qw_mdict_buffer_append_text(&html, "</div>\n");
+    }
+
+    for (index = 0u; status == QW_MDICT_OK && index < container->table.count;
+         ++index) {
+        const uint8_t *record;
+        size_t record_size = 0u;
+        const uint8_t *key = container->table.key_text.data +
+                             container->table.key_offsets[index];
+
+        status = qw_mdict_buffer_append_text(&html, "<h2>");
+        if (status != QW_MDICT_OK) break;
+        status = qw_mdict_append_escaped(
+            &html, key, container->table.key_lengths[index]);
+        if (status != QW_MDICT_OK) break;
+        status = qw_mdict_buffer_append_text(&html, "</h2>\n");
+        if (status != QW_MDICT_OK) break;
+        record = mdict_resolve_record(container, index, &record_size);
+        if (!record) {
+            status = QW_MDICT_ERR_FORMAT;
+            break;
+        }
+        record_size = mdict_record_length(record, record_size);
+        {
+            uint8_t *stripped = mdict_strip_entry_scheme(record, record_size,
+                                                         &record_size);
+            if (stripped) record = stripped;
+            if (html_records) {
+                if (mdd)
+                    status = mdict_append_record_with_images(
+                        mdd, record, record_size, &html, &embedded_bytes);
+                else
+                    status = qw_mdict_buffer_append(&html, record,
+                                                   record_size);
+                if (status == QW_MDICT_OK)
+                    status = qw_mdict_buffer_append_text(&html, "\n");
+            } else {
+                status = mdict_append_escaped_record(&html, record,
+                                                     record_size);
+            }
+            free(stripped);
+        }
+    }
+    if (status != QW_MDICT_OK) {
+        qw_mdict_buffer_free(&html);
+        if (error && error_capacity)
+            snprintf(error, error_capacity, "%s",
+                     status == QW_MDICT_ERR_RESOURCE_LIMIT
+                         ? "MDict document exceeds the rendered text limit"
+                         : "MDict document could not be rendered");
+        return status;
+    }
+    if (qw_mdict_buffer_append_text(&html, "</body></html>\n") != QW_MDICT_OK ||
+        qw_mdict_buffer_append_byte(&html, 0u) != QW_MDICT_OK) {
+        qw_mdict_buffer_free(&html);
+        return QW_MDICT_ERR_OUT_OF_MEMORY;
+    }
+    *out_html = html.data;
+    *out_size = html.size - 1u;
+    return QW_MDICT_OK;
+}
+
 int qw_mdict_build_html(const QwMdictContainer *container, uint8_t **out_html,
                         size_t *out_size, char *error, size_t error_capacity)
 {

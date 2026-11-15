@@ -2,6 +2,8 @@
 
 #include "mdict_internal.h"
 
+#include <quirewise/mdd.h>
+
 #include <stdlib.h>
 #include <string.h>
 
@@ -11,6 +13,8 @@ struct QwMdxDocument {
     size_t html_size;
     uint8_t *text;
     size_t text_size;
+    uint8_t *resource_html;
+    size_t resource_html_size;
 };
 
 static QwMdxStatus mdx_status_from_container(int status)
@@ -136,6 +140,32 @@ QwMdxStatus qw_mdx_document_html(QwMdxDocument *document,
     }
     *out_html = document->html;
     *out_size = document->html_size;
+    return QW_MDX_OK;
+}
+
+QwMdxStatus qw_mdx_document_html_with_resources(
+    QwMdxDocument *document, const QwMddDocument *resources,
+    const uint8_t **out_html, size_t *out_size)
+{
+    char error[160];
+    int status;
+
+    if (out_html) *out_html = NULL;
+    if (out_size) *out_size = 0u;
+    if (!document || !document->container || !out_html || !out_size)
+        return QW_MDX_ERROR_INVALID_ARGUMENT;
+    if (!resources) {
+        return qw_mdx_document_html(document, out_html, out_size);
+    }
+    if (!document->resource_html) {
+        error[0] = '\0';
+        status = qw_mdict_build_html_with_resources(
+            document->container, resources, &document->resource_html,
+            &document->resource_html_size, error, sizeof(error));
+        if (status != QW_MDICT_OK) return mdx_status_from_container(status);
+    }
+    *out_html = document->resource_html;
+    *out_size = document->resource_html_size;
     return QW_MDX_OK;
 }
 
