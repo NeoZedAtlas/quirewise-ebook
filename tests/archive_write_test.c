@@ -58,6 +58,29 @@ int main(void)
 
     archive = NULL;
     archive_size = 0u;
+    if (qw_text_archive_create(QW_TEXT_ARCHIVE_PMLZ, text, sizeof(text) - 1u,
+                               &archive, &archive_size) != QW_TEXT_ARCHIVE_OK ||
+        !archive || !archive_size)
+        fail("PMLZ create failed");
+    {
+        QwTextArchiveDocument document;
+        const char *error = NULL;
+
+        memset(&document, 0, sizeof(document));
+        if (qw_text_archive_extract_primary(archive, archive_size,
+                                            QW_TEXT_ARCHIVE_PMLZ, &document,
+                                            &error) != QW_TEXT_ARCHIVE_OK ||
+            !document.text_bytes || document.text_size != sizeof(text) - 1u) {
+            fprintf(stderr, "FAIL: PMLZ did not round-trip (%s)\n",
+                    error ? error : "");
+            exit(1);
+        }
+        qw_text_archive_document_free(&document);
+    }
+    qw_text_archive_buffer_free(archive);
+
+    archive = NULL;
+    archive_size = 0u;
     if (qw_htmlz_create(html, sizeof(html) - 1u, &archive, &archive_size) !=
             QW_HTMLZ_OK ||
         !archive || !archive_size)
