@@ -28,7 +28,9 @@ typedef enum QwEpubStyleFlags {
      * marked TABLE_CELL. Plain readers that concatenate runs see cell text
      * back to back. */
     QW_EPUB_STYLE_TABLE_ROW = 1u << 5,
-    QW_EPUB_STYLE_TABLE_CELL = 1u << 6
+    QW_EPUB_STYLE_TABLE_CELL = 1u << 6,
+    QW_EPUB_STYLE_LIST_ITEM = 1u << 7,
+    QW_EPUB_STYLE_PRE = 1u << 8
 } QwEpubStyleFlags;
 
 typedef struct QwEpubDocument QwEpubDocument;

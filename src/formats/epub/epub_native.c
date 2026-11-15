@@ -887,8 +887,11 @@ static int epub_layout_collect_flow(QwEpubLayoutOwner *owner,
                                                   style_flags);
             if (rc != QW_EBOOK_OK) return rc;
             if (level) flags |= QW_LAYOUT_STYLE_HEADING;
+            if (strcmp(epub_local_name(tag), "li") == 0) {
+                flags |= QW_EPUB_STYLE_LIST_ITEM;
+            }
             if (strcmp(epub_local_name(tag), "pre") == 0) {
-                flags |= QW_LAYOUT_STYLE_CODE;
+                flags |= QW_LAYOUT_STYLE_CODE | QW_EPUB_STYLE_PRE;
             }
             rc = epub_layout_collect_inline(owner, &paragraph,
                 qw_xml_down(node), flags, NULL, depth + 1u);
