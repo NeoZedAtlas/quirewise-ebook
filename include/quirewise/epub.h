@@ -30,7 +30,9 @@ typedef enum QwEpubStyleFlags {
     QW_EPUB_STYLE_TABLE_ROW = 1u << 5,
     QW_EPUB_STYLE_TABLE_CELL = 1u << 6,
     QW_EPUB_STYLE_LIST_ITEM = 1u << 7,
-    QW_EPUB_STYLE_PRE = 1u << 8
+    QW_EPUB_STYLE_PRE = 1u << 8,
+    /* Run text is a data: URI for an embedded image (base64 payload). */
+    QW_EPUB_STYLE_IMAGE = 1u << 9
 } QwEpubStyleFlags;
 
 typedef struct QwEpubDocument QwEpubDocument;

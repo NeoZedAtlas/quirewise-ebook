@@ -44,6 +44,10 @@ typedef struct QwEpubLayoutOwner {
     size_t paragraph_count;
     size_t run_count;
     size_t layout_text_bytes;
+    QwZipArchive *zip;
+    const char *chapter_path;
+    size_t image_count;
+    size_t image_bytes;
 } QwEpubLayoutOwner;
 
 typedef struct QwEpubParagraphBuilder {
@@ -52,6 +56,11 @@ typedef struct QwEpubParagraphBuilder {
     size_t run_capacity;
     size_t text_bytes;
 } QwEpubParagraphBuilder;
+
+static int epub_layout_append_image(QwEpubLayoutOwner *owner,
+                                    QwEpubParagraphBuilder *builder,
+                                    const char *src, const char *alt,
+                                    unsigned style_flags);
 
 static int epub_set_error(QwConvertReport *report, int code,
                           const char *message)
@@ -622,12 +631,10 @@ static int epub_layout_collect_inline(QwEpubLayoutOwner *owner,
             continue;
         }
         if (strcmp(epub_local_name(tag), "img") == 0) {
-            /* Images are not part of the text layout; keep the alt text so
-             * the document is not silently blank where a figure sits. */
-            const char *alt = qw_xml_att(node, "alt");
-            if (alt && alt[0] &&
-                !epub_layout_run_append(owner, builder, alt, style_flags,
-                                        link_target))
+            if (!epub_layout_append_image(owner, builder,
+                                          qw_xml_att(node, "src"),
+                                          qw_xml_att(node, "alt"),
+                                          style_flags))
                 return QW_EBOOK_ERR_OUT_OF_MEMORY;
             continue;
         }
@@ -847,6 +854,148 @@ static int epub_layout_flatten_table(QwEpubLayoutOwner *owner,
                                   style_flags, depth + 1u);
 }
 
+
+static const char *epub_image_mime(const char *path)
+{
+    const char *dot;
+    size_t index;
+    static const struct { const char *extension; const char *mime; } map[] = {
+        { "png", "image/png" }, { "jpg", "image/jpeg" },
+        { "jpeg", "image/jpeg" }, { "gif", "image/gif" },
+        { "webp", "image/webp" }, { "bmp", "image/bmp" },
+        { "tif", "image/tiff" }, { "tiff", "image/tiff" }
+    };
+    if (!path) return NULL;
+    dot = strrchr(path, '.');
+    if (!dot || !dot[1]) return NULL;
+    for (index = 0u; index < sizeof(map) / sizeof(map[0]); ++index) {
+        const char *left = dot + 1u;
+        const char *right = map[index].extension;
+        size_t offset = 0u;
+        int equal = 1;
+        while (left[offset] && right[offset]) {
+            unsigned char a = (unsigned char)left[offset];
+            unsigned char b = (unsigned char)right[offset];
+            if (a >= 'A' && a <= 'Z') a = (unsigned char)(a + 32);
+            if (a != b) { equal = 0; break; }
+            ++offset;
+        }
+        if (equal && !left[offset] && !right[offset]) return map[index].mime;
+    }
+    return NULL;
+}
+
+static int epub_append_image_run(QwEpubLayoutOwner *owner,
+                                 QwEpubParagraphBuilder *builder,
+                                 const uint8_t *data, size_t size,
+                                 const char *mime, unsigned style_flags)
+{
+    static const char alphabet[] =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    size_t prefix = strlen("data:;base64,") + strlen(mime);
+    size_t encoded_size = ((size + 2u) / 3u) * 4u;
+    char *text;
+    size_t cursor = 0u;
+    size_t index;
+
+    if (!owner || !builder || !data || !size || !mime) return 0;
+    if (owner->layout_text_bytes > QW_EPUB_MAX_LAYOUT_TEXT_BYTES ||
+        prefix + encoded_size >
+            QW_EPUB_MAX_LAYOUT_TEXT_BYTES - owner->layout_text_bytes)
+        return 1;
+    text = (char *)malloc(prefix + encoded_size + 1u);
+    if (!text) return 0;
+    cursor = (size_t)snprintf(text, prefix + 1u, "data:%s;base64,", mime);
+    for (index = 0u; index < size; index += 3u) {
+        uint32_t value = (uint32_t)data[index] << 16;
+        if (index + 1u < size) value |= (uint32_t)data[index + 1u] << 8;
+        if (index + 2u < size) value |= (uint32_t)data[index + 2u];
+        text[cursor++] = alphabet[(value >> 18) & 0x3fu];
+        text[cursor++] = alphabet[(value >> 12) & 0x3fu];
+        text[cursor++] = index + 1u < size
+                             ? alphabet[(value >> 6) & 0x3fu] : '=';
+        text[cursor++] = index + 2u < size ? alphabet[value & 0x3fu] : '=';
+    }
+    text[cursor] = '\0';
+    {
+        int ok = epub_layout_run_append(owner, builder, text,
+                                        style_flags | QW_EPUB_STYLE_IMAGE,
+                                        NULL);
+        free(text);
+        return ok;
+    }
+}
+
+/* <img src> resources become data: URI runs; alt text remains the fallback. */
+static int epub_layout_append_image(QwEpubLayoutOwner *owner,
+                                    QwEpubParagraphBuilder *builder,
+                                    const char *src, const char *alt,
+                                    unsigned style_flags)
+{
+    if (!owner || !builder) return 0;
+    fprintf(stderr, "DBG append_image src=%s zip=%p chapter=%s\n",
+            src ? src : "(null)", (void *)owner->zip,
+            owner->chapter_path ? owner->chapter_path : "(null)");
+    if (src && src[0]) {
+        if (strncmp(src, "data:image/", 11u) == 0) {
+            size_t length = strlen(src);
+            if (length <= 16u * 1024u * 1024u) {
+                return epub_layout_run_append(
+                    owner, builder, src,
+                    style_flags | QW_EPUB_STYLE_IMAGE, NULL);
+            }
+        } else if (strstr(src, "://") == NULL &&
+                   owner->zip && owner->chapter_path &&
+                   owner->image_count < 64u &&
+                   owner->image_bytes < 32u * 1024u * 1024u) {
+            const char *slash = strrchr(owner->chapter_path, '/');
+            char directory[1024];
+            char *resolved;
+            void *data;
+            size_t data_size = 0u;
+            const char *mime;
+            if (slash) {
+                size_t length = (size_t)(slash - owner->chapter_path);
+                if (length < sizeof(directory)) {
+                    memcpy(directory, owner->chapter_path, length);
+                    directory[length] = '\0';
+                } else {
+                    directory[0] = '\0';
+                }
+            } else {
+                directory[0] = '\0';
+            }
+            resolved = epub_resolve_href(directory, src);
+            fprintf(stderr, "DBG resolve dir=%s src=%s -> %s\n", directory,
+                    src, resolved ? resolved : "(null)");
+            if (!resolved) return 1;
+            data = epub_extract_named(owner->zip, resolved, &data_size);
+            fprintf(stderr, "DBG resolved=%s data=%p size=%zu mime=%s\n",
+                    resolved, data, data_size,
+                    epub_image_mime(resolved) ? epub_image_mime(resolved)
+                                              : "(none)");
+            if (data && data_size > 0u && data_size <= 8u * 1024u * 1024u &&
+                data_size <= 32u * 1024u * 1024u - owner->image_bytes &&
+                (mime = epub_image_mime(resolved)) != NULL) {
+                int ok = epub_append_image_run(owner, builder,
+                                               (const uint8_t *)data,
+                                               data_size, mime, style_flags);
+                if (ok) {
+                    owner->image_count += 1u;
+                    owner->image_bytes += data_size;
+                }
+                free(data);
+                free(resolved);
+                return ok;
+            }
+            free(data);
+            free(resolved);
+        }
+    }
+    if (alt && alt[0])
+        return epub_layout_run_append(owner, builder, alt, style_flags, NULL);
+    return 1;
+}
 static int epub_layout_collect_flow(QwEpubLayoutOwner *owner,
                                     QwLayoutSection *section, QwXmlNode *nodes,
                                     unsigned style_flags,
@@ -866,10 +1015,10 @@ static int epub_layout_collect_flow(QwEpubLayoutOwner *owner,
             continue;
         }
         if (strcmp(epub_local_name(tag), "img") == 0) {
-            const char *alt = qw_xml_att(node, "alt");
-            if (alt && alt[0] &&
-                !epub_layout_run_append(owner, pending, alt, style_flags,
-                                        NULL))
+            if (!epub_layout_append_image(owner, pending,
+                                          qw_xml_att(node, "src"),
+                                          qw_xml_att(node, "alt"),
+                                          style_flags))
                 return QW_EBOOK_ERR_OUT_OF_MEMORY;
             continue;
         }
@@ -1080,6 +1229,8 @@ int qw_epub_native_open_layout(const void *data, size_t size,
                                 "Could not allocate an EPUB chapter layout");
             goto cleanup;
         }
+        owner->zip = &zip;
+        owner->chapter_path = spine.items[i].path;
         rc = epub_layout_collect_flow(owner, section, qw_xml_down(body), 0u,
                                       &pending, 0u);
         if (rc == QW_EBOOK_OK) {
