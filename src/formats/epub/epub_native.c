@@ -619,6 +619,28 @@ static int epub_layout_collect_inline(QwEpubLayoutOwner *owner,
                                         link_target)) return QW_EBOOK_ERR_OUT_OF_MEMORY;
             continue;
         }
+        if (strcmp(epub_local_name(tag), "img") == 0) {
+            /* Images are not part of the text layout; keep the alt text so
+             * the document is not silently blank where a figure sits. */
+            const char *alt = qw_xml_att(node, "alt");
+            if (alt && alt[0] &&
+                !epub_layout_run_append(owner, builder, alt, style_flags,
+                                        link_target))
+                return QW_EBOOK_ERR_OUT_OF_MEMORY;
+            continue;
+        }
+        if (strcmp(epub_local_name(tag), "td") == 0 ||
+            strcmp(epub_local_name(tag), "th") == 0) {
+            if (builder->text_bytes &&
+                !epub_layout_run_append(owner, builder, " | ", style_flags,
+                                        link_target))
+                return QW_EBOOK_ERR_OUT_OF_MEMORY;
+        } else if (strcmp(epub_local_name(tag), "tr") == 0) {
+            if (builder->text_bytes &&
+                !epub_layout_run_append(owner, builder, "  ", style_flags,
+                                        link_target))
+                return QW_EBOOK_ERR_OUT_OF_MEMORY;
+        }
         {
             unsigned child_flags = epub_layout_style_for_tag(tag, style_flags);
             const char *child_link = link_target;
@@ -738,6 +760,85 @@ static int epub_layout_flush_paragraph(QwEpubLayoutOwner *owner,
     return QW_EBOOK_OK;
 }
 
+/* Tables are flattened: every table row becomes one paragraph and cells are
+ * separated by " | ". Nesting is bounded like the rest of the collector. */
+static int epub_layout_table_row(QwEpubLayoutOwner *owner,
+                                 QwLayoutSection *section, QwXmlNode *row,
+                                 unsigned style_flags, size_t depth)
+{
+    QwEpubParagraphBuilder paragraph = {0};
+    QwXmlNode *cell;
+    int rc;
+
+    for (cell = qw_xml_down(row); cell; cell = qw_xml_next(cell)) {
+        const char *cell_tag = qw_xml_tag(cell);
+        if (!cell_tag) continue;
+        {
+            const char *cell_name = epub_local_name(cell_tag);
+            if (strcmp(cell_name, "td") != 0 &&
+                strcmp(cell_name, "th") != 0)
+                continue;
+        }
+        if (paragraph.text_bytes &&
+            !epub_layout_run_append(owner, &paragraph, " | ", style_flags,
+                                    NULL)) {
+            epub_layout_paragraph_builder_dispose(&paragraph);
+            return QW_EBOOK_ERR_OUT_OF_MEMORY;
+        }
+        rc = epub_layout_collect_inline(owner, &paragraph, qw_xml_down(cell),
+                                        style_flags, NULL, depth + 1u);
+        if (rc != QW_EBOOK_OK) {
+            epub_layout_paragraph_builder_dispose(&paragraph);
+            return rc;
+        }
+    }
+    rc = epub_layout_flush_paragraph(owner, section, &paragraph, 0u,
+                                     style_flags);
+    epub_layout_paragraph_builder_dispose(&paragraph);
+    return rc;
+}
+
+static int epub_layout_table_walk(QwEpubLayoutOwner *owner,
+                                  QwLayoutSection *section, QwXmlNode *nodes,
+                                  unsigned style_flags, size_t depth)
+{
+    QwXmlNode *node;
+
+    if (depth > 128u) return QW_EBOOK_ERR_UNSUPPORTED;
+    for (node = nodes; node; node = qw_xml_next(node)) {
+        const char *tag = qw_xml_tag(node);
+        int rc;
+
+        if (tag) {
+            const char *name = epub_local_name(tag);
+            if (strcmp(name, "table") == 0) continue; /* flattened already */
+            if (strcmp(name, "tr") == 0) {
+                rc = epub_layout_table_row(owner, section, node, style_flags,
+                                           depth);
+                if (rc != QW_EBOOK_OK) return rc;
+                continue;
+            }
+        }
+        rc = epub_layout_table_walk(owner, section, qw_xml_down(node),
+                                    style_flags, depth + 1u);
+        if (rc != QW_EBOOK_OK) return rc;
+    }
+    return QW_EBOOK_OK;
+}
+
+static int epub_layout_flatten_table(QwEpubLayoutOwner *owner,
+                                     QwLayoutSection *section, QwXmlNode *table,
+                                     QwEpubParagraphBuilder *pending,
+                                     unsigned style_flags, size_t depth)
+{
+    int rc;
+
+    rc = epub_layout_flush_paragraph(owner, section, pending, 0u, style_flags);
+    if (rc != QW_EBOOK_OK) return rc;
+    return epub_layout_table_walk(owner, section, qw_xml_down(table),
+                                  style_flags, depth + 1u);
+}
+
 static int epub_layout_collect_flow(QwEpubLayoutOwner *owner,
                                     QwLayoutSection *section, QwXmlNode *nodes,
                                     unsigned style_flags,
@@ -754,6 +855,20 @@ static int epub_layout_collect_flow(QwEpubLayoutOwner *owner,
                                                 style_flags, NULL)) {
                 return QW_EBOOK_ERR_OUT_OF_MEMORY;
             }
+            continue;
+        }
+        if (strcmp(epub_local_name(tag), "img") == 0) {
+            const char *alt = qw_xml_att(node, "alt");
+            if (alt && alt[0] &&
+                !epub_layout_run_append(owner, pending, alt, style_flags,
+                                        NULL))
+                return QW_EBOOK_ERR_OUT_OF_MEMORY;
+            continue;
+        }
+        if (strcmp(epub_local_name(tag), "table") == 0) {
+            int rc = epub_layout_flatten_table(owner, section, node, pending,
+                                               style_flags, depth);
+            if (rc != QW_EBOOK_OK) return rc;
             continue;
         }
         if (epub_layout_tag_is_block(tag)) {
@@ -802,6 +917,12 @@ static int epub_layout_collect_flow(QwEpubLayoutOwner *owner,
  * ignores them, so they must not trigger the compatibility path. Real EPUBs
  * produced by calibre/Sigil routinely carry a class on every paragraph and a
  * stylesheet link; rejecting those made the package unusable for actual books.
+ *
+ * Lists, pre blocks, tables and images are no longer skipped: the collector
+ * renders list items/preformatted blocks as paragraphs, flattens table rows
+ * with " | " cell separators and keeps img alt text. Only elements with no
+ * text representation (SVG, canvas, frames, media, MathML) use the
+ * compatibility path.
  */
 static int epub_layout_requires_legacy(QwXmlNode *nodes, size_t depth)
 {
@@ -811,13 +932,11 @@ static int epub_layout_requires_legacy(QwXmlNode *nodes, size_t depth)
         const char *tag = qw_xml_tag(node);
         if (tag) {
             const char *name = epub_local_name(tag);
-            if (strcmp(name, "img") == 0 || strcmp(name, "picture") == 0 ||
-                strcmp(name, "svg") == 0 || strcmp(name, "table") == 0 ||
-                strcmp(name, "ul") == 0 || strcmp(name, "ol") == 0 ||
-                strcmp(name, "dl") == 0 || strcmp(name, "pre") == 0 ||
+            if (strcmp(name, "picture") == 0 || strcmp(name, "svg") == 0 ||
                 strcmp(name, "canvas") == 0 || strcmp(name, "iframe") == 0 ||
                 strcmp(name, "object") == 0 || strcmp(name, "video") == 0 ||
-                strcmp(name, "audio") == 0 || strcmp(name, "math") == 0) return 1;
+                strcmp(name, "audio") == 0 || strcmp(name, "math") == 0)
+                return 1;
         }
         if (epub_layout_requires_legacy(qw_xml_down(node), depth + 1u)) return 1;
     }
