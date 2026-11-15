@@ -4,6 +4,8 @@
 
 #include "epub_native.h"
 
+#include <quirewise/epub.h>
+
 #include "../../core/xml_parser.h"
 #include "../archive/zip_native.h"
 
@@ -760,8 +762,9 @@ static int epub_layout_flush_paragraph(QwEpubLayoutOwner *owner,
     return QW_EBOOK_OK;
 }
 
-/* Tables are flattened: every table row becomes one paragraph and cells are
- * separated by " | ". Nesting is bounded like the rest of the collector. */
+/* Table rows become one paragraph; run flags mark the row and each cell so
+ * the HTML renderers can emit real <table> markup. Nesting is bounded like the
+ * rest of the collector. */
 static int epub_layout_table_row(QwEpubLayoutOwner *owner,
                                  QwLayoutSection *section, QwXmlNode *row,
                                  unsigned style_flags, size_t depth)
@@ -779,18 +782,23 @@ static int epub_layout_table_row(QwEpubLayoutOwner *owner,
                 strcmp(cell_name, "th") != 0)
                 continue;
         }
-        if (paragraph.text_bytes &&
-            !epub_layout_run_append(owner, &paragraph, " | ", style_flags,
-                                    NULL)) {
-            epub_layout_paragraph_builder_dispose(&paragraph);
-            return QW_EBOOK_ERR_OUT_OF_MEMORY;
+        {
+            size_t cell_start = paragraph.run_count;
+            rc = epub_layout_collect_inline(owner, &paragraph,
+                                            qw_xml_down(cell), style_flags,
+                                            NULL, depth + 1u);
+            if (rc != QW_EBOOK_OK) {
+                epub_layout_paragraph_builder_dispose(&paragraph);
+                return rc;
+            }
+            if (paragraph.run_count > cell_start) {
+                paragraph.runs[cell_start].style_flags |=
+                    QW_EPUB_STYLE_TABLE_CELL;
+            }
         }
-        rc = epub_layout_collect_inline(owner, &paragraph, qw_xml_down(cell),
-                                        style_flags, NULL, depth + 1u);
-        if (rc != QW_EBOOK_OK) {
-            epub_layout_paragraph_builder_dispose(&paragraph);
-            return rc;
-        }
+    }
+    if (paragraph.run_count) {
+        paragraph.runs[0].style_flags |= QW_EPUB_STYLE_TABLE_ROW;
     }
     rc = epub_layout_flush_paragraph(owner, section, &paragraph, 0u,
                                      style_flags);
@@ -920,7 +928,7 @@ static int epub_layout_collect_flow(QwEpubLayoutOwner *owner,
  *
  * Lists, pre blocks, tables and images are no longer skipped: the collector
  * renders list items/preformatted blocks as paragraphs, flattens table rows
- * with " | " cell separators and keeps img alt text. Only elements with no
+ * as table structures with marked rows/cells and keeps img alt text. Only
  * text representation (SVG, canvas, frames, media, MathML) use the
  * compatibility path.
  */

@@ -23,7 +23,12 @@ typedef enum QwEpubStyleFlags {
     QW_EPUB_STYLE_ITALIC = 1u << 1,
     QW_EPUB_STYLE_CODE = 1u << 2,
     QW_EPUB_STYLE_HEADING = 1u << 3,
-    QW_EPUB_STYLE_QUOTE = 1u << 4
+    QW_EPUB_STYLE_QUOTE = 1u << 4,
+    /* Table rows carry TABLE_ROW on their first run; each cell starts on a run
+     * marked TABLE_CELL. Plain readers that concatenate runs see cell text
+     * back to back. */
+    QW_EPUB_STYLE_TABLE_ROW = 1u << 5,
+    QW_EPUB_STYLE_TABLE_CELL = 1u << 6
 } QwEpubStyleFlags;
 
 typedef struct QwEpubDocument QwEpubDocument;
