@@ -15,6 +15,15 @@ endif()
 if(NOT TARGET Quirewise::Archive)
     find_package(QuirewiseArchive CONFIG REQUIRED)
 endif()
+if(NOT TARGET Quirewise::Charset)
+    find_package(QuirewiseCharset CONFIG REQUIRED)
+endif()
+if(NOT TARGET Quirewise::Compression)
+    find_package(QuirewiseCompression CONFIG REQUIRED)
+endif()
+if(NOT TARGET Quirewise::Crypto)
+    find_package(QuirewiseCrypto CONFIG REQUIRED)
+endif()
 if(NOT TARGET Quirewise::Data)
     find_package(QuirewiseData CONFIG REQUIRED)
 endif()
@@ -30,7 +39,7 @@ target_include_directories(quirewise_ebook PUBLIC
     "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
     "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>"
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/src/core ${CMAKE_CURRENT_SOURCE_DIR}/src/formats ${CMAKE_CURRENT_SOURCE_DIR}/src/backends)
-target_link_libraries(quirewise_ebook PRIVATE Quirewise::Archive Quirewise::Data Quirewise::Text)
+target_link_libraries(quirewise_ebook PRIVATE Quirewise::Archive Quirewise::Charset Quirewise::Compression Quirewise::Crypto Quirewise::Data Quirewise::Text)
 install(TARGETS quirewise_ebook EXPORT QuirewiseEbookTargets
     ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
     LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
@@ -64,5 +73,11 @@ if(BUILD_TESTING)
         PRIVATE Quirewise::Ebook)
     add_test(NAME quirewise_ebook_mobi_palm_doc
         COMMAND quirewise_ebook_mobi_palm_doc_test)
+
+    add_executable(quirewise_ebook_mdict_test tests/mdict_test.c)
+    target_compile_features(quirewise_ebook_mdict_test PRIVATE c_std_11)
+    target_link_libraries(quirewise_ebook_mdict_test PRIVATE
+        Quirewise::Ebook Quirewise::Compression Quirewise::Crypto)
+    add_test(NAME quirewise_ebook_mdict COMMAND quirewise_ebook_mdict_test)
 endif()
 target_link_libraries(quirewise_ebook PUBLIC Quirewise::Runtime)

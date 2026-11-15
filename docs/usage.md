@@ -2,7 +2,8 @@
 
 This guide covers the task-level workflows of `Quirewise::Ebook`. The public
 API is declared in `quirewise/epub.h`, `quirewise/mobi.h`, `quirewise/fb2.h`,
-`quirewise/pml.h`, `quirewise/htmlz.h` and `quirewise/text_archive.h`.
+`quirewise/mdx.h`, `quirewise/mdd.h`, `quirewise/pml.h`, `quirewise/htmlz.h` and
+`quirewise/text_archive.h`.
 
 ## 1. Build and integrate
 
@@ -22,7 +23,8 @@ target_link_libraries(your_app PRIVATE Quirewise::Ebook)
 ```
 
 The package config calls `find_dependency` for `QuirewiseRuntime`,
-`QuirewiseArchive`, `QuirewiseData` and `QuirewiseText`. Install those packages
+`QuirewiseArchive`, `QuirewiseCharset`, `QuirewiseCompression`,
+`QuirewiseCrypto`, `QuirewiseData` and `QuirewiseText`. Install those packages
 into the same prefix before configuring a consumer, or add every prefix to
 `CMAKE_PREFIX_PATH`.
 
@@ -38,6 +40,8 @@ There are three ownership shapes:
 | EPUB | opaque `QwEpubDocument *` with borrowed views | `qw_epub_document_free` |
 | MOBI | opaque `QwMobiDocument *` with an owned text buffer accessor | `qw_mobi_document_free` |
 | FB2 | opaque `QwFB2Document *` with an owned HTML accessor | `qw_fb2_document_free` |
+| MDX | opaque `QwMdxDocument *` with owned keys, records, HTML and text | `qw_mdx_document_free` |
+| MDD | opaque `QwMddDocument *` with owned names and payloads | `qw_mdd_document_free` |
 | PML | caller-provided `QwPmlDocument` struct | `qw_pml_document_free` |
 | HTMLZ | caller-provided `QwHtmlzDocument` struct | `qw_htmlz_document_free` |
 | TXTZ / PMLZ | caller-provided `QwTextArchiveDocument` struct | `qw_text_archive_document_free` |
@@ -48,6 +52,10 @@ Rules that hold for every reader:
   assume a terminator, except that PML and MOBI buffers happen to be
   NUL-terminated. PML and HTMLZ/TXTZ text keeps the payload's original
   byte encoding.
+- MDX/MDD parse everywhere returns UTF-8 keys, names and articles. Entry and
+  resource pointers borrow from the document; the HTML and text documents are
+  built on first use and cached inside the document. None of them may be freed
+  individually.
 - Views returned by `qw_epub_section_at`, `qw_epub_paragraph_at` and
   `qw_epub_run_at` point into the document. They stay valid until
   `qw_epub_document_free` is called and must not be freed individually.
@@ -234,12 +242,15 @@ Each reader has its own negative status enum. `0` always means success.
 | EPUB | `QW_EPUB_OK` | `_ERR_INVALID_ARGUMENT`, `_ERR_OUT_OF_MEMORY`, `_ERR_FORMAT`, `_ERR_UNSUPPORTED`, `_ERR_RESOURCE_LIMIT`, `_ERR_DECODE` |
 | MOBI | `QW_MOBI_OK` | `_ERROR_INVALID_ARGUMENT`, `_OUT_OF_MEMORY`, `_FORMAT`, `_UNSUPPORTED`, `_DECODE`, `_RESOURCE_LIMIT`, `_UNKNOWN` |
 | FB2 | `QW_FB2_OK` | `QW_FB2_ERROR_INVALID_ARGUMENT`, `_OUT_OF_MEMORY`, `_FORMAT`, `_UNSUPPORTED`, `_DECODE`, `_RESOURCE_LIMIT`, `_UNKNOWN` |
+| MDX | `QW_MDX_OK` | `QW_MDX_ERROR_INVALID_ARGUMENT`, `_OUT_OF_MEMORY`, `_FORMAT`, `_UNSUPPORTED`, `_DECODE`, `_RESOURCE_LIMIT`, `_UNKNOWN` |
+| MDD | `QW_MDD_OK` | `QW_MDD_ERROR_INVALID_ARGUMENT`, `_OUT_OF_MEMORY`, `_FORMAT`, `_UNSUPPORTED`, `_DECODE`, `_RESOURCE_LIMIT`, `_UNKNOWN` |
 | PML | `QW_PML_OK` | `_ERR_INVALID_ARGUMENT`, `_ERR_OUT_OF_MEMORY`, `_ERR_RESOURCE_LIMIT` |
 | HTMLZ | `QW_HTMLZ_OK` | `_ERR_INVALID_ARGUMENT`, `_ERR_OUT_OF_MEMORY`, `_ERR_ARCHIVE`, `_ERR_NOT_FOUND`, `_ERR_RESOURCE_LIMIT` |
 | TXTZ/PMLZ | `QW_TEXT_ARCHIVE_OK` | `QW_TEXT_ARCHIVE_ERR_INVALID_ARGUMENT`, `_OUT_OF_MEMORY`, `_ARCHIVE`, `_NOT_FOUND`, `_RESOURCE_LIMIT` |
 
 - `_UNSUPPORTED` — the container is recognized but uses a feature this package
-  does not implement (DRM, HUFF/CDIC, EPUB structural chapter, FB2 image type).
+  does not implement (DRM, HUFF/CDIC, EPUB structural chapter, FB2 image type,
+  MDict engine 1.2, MDict register-code encryption).
 - `_FORMAT` — the bytes are not the format, the container is corrupt, or a
   required part (container.xml, OPF, spine chapter, FB2 body) is missing.
 - `_RESOURCE_LIMIT` — a documented cap was exceeded.
@@ -273,25 +284,108 @@ map the numeric value in your own diagnostic layer.
 | EPUB ZIP profile | 1 GiB archive input, 10,000 entries, 128 MiB per member, 512 MiB total |
 | MOBI text | 32 MiB, no compression or PalmDOC, CP1252 or UTF-8 |
 | FB2 HTML | 64 MiB output |
+| MDX/MDD header | 1 MiB per container, UTF-16 root element |
+| MDX/MDD index | 32 MiB decoded key index, 64 MiB per block |
+| MDX/MDD records | 192 MiB record stream, 1,048,576 entries, 16 KiB per key |
+| MDX/MDD rendering | 96 MiB HTML or text output |
 | PML input | 64 MiB |
 | HTMLZ/TXTZ/PMLZ | 256 MiB archive, 10,000 entries, 64 MiB per member, 256 MiB total |
 
 Deliberately unsupported: EPUB writing, MOBI/AZW3 writing, DRM removal, HUFF/
 CDIC, MOBI embedded resources and fixed layout, EPUB tables/lists/images,
-HTMLZ embedded-resource rewriting, and PDF output. PDF and CLI routing belong
-to `Quirewise::Document` and `Quirewise::Pipeline`.
+HTMLZ embedded-resource rewriting, MDict engine 1.2 and register-code
+encryption, MDD images embedded into MDX output, and PDF output. PDF and CLI
+routing belong to `Quirewise::Document` and `Quirewise::Pipeline`.
 
-## 11. Related packages
+## 11. Recipe: read an MDict dictionary (MDX)
+
+MDX stores one article per headword. `qw_mdx_parse` decodes the index and
+record stream up front; the whole-dictionary HTML and text views are built on
+first use.
+
+```c
+QwMdxDocument *dictionary = NULL;
+char error[192];
+QwMdxStatus status = qw_mdx_parse(bytes, size, &dictionary, error, sizeof(error));
+
+if (status != QW_MDX_OK) {
+    fprintf(stderr, "MDX: %s\n", error);   /* e.g. engine 1.2 or passcode */
+    return 1;
+}
+printf("%s: %zu entries (%s)\n", qw_mdx_document_title(dictionary),
+       qw_mdx_document_entry_count(dictionary),
+       qw_mdx_document_encoding(dictionary));
+{
+    const char *key = NULL;
+    const char *record = NULL;
+    size_t key_size = 0u;
+    size_t record_size = 0u;
+    if (qw_mdx_document_entry_at(dictionary, 0u, &key, &key_size, &record,
+                                 &record_size) == QW_MDX_OK)
+        printf("%.*s -> %zu bytes of article\n", (int)key_size, key,
+               record_size);
+}
+{
+    const uint8_t *html = NULL;
+    size_t html_size = 0u;
+    if (qw_mdx_document_html(dictionary, &html, &html_size) == QW_MDX_OK)
+        fwrite(html, 1u, html_size, stdout);   /* one complete <html> page */
+}
+qw_mdx_document_free(dictionary);
+```
+
+`qw_mdx_document_text` returns the same content with block markup reduced to
+line breaks, which is what a plain-text export wants. Records of a
+`Format="Html"` dictionary are HTML fragments; `Format="Text"` dictionaries are
+escaped into paragraphs. `@@@LINK` and `entry://` links are not resolved.
+
+## 12. Recipe: read MDict resources (MDD)
+
+An MDD is the companion container that holds images, stylesheets and audio.
+Payloads are binary and are returned as borrowed slices.
+
+```c
+QwMddDocument *resources = NULL;
+char error[192];
+
+if (qw_mdd_parse(bytes, size, &resources, error, sizeof(error)) != QW_MDD_OK) {
+    fprintf(stderr, "MDD: %s\n", error);
+    return 1;
+}
+{
+    const uint8_t *payload = NULL;
+    size_t payload_size = 0u;
+    size_t index;
+    if (qw_mdd_document_resource_find(resources, "\\image.gif", 10u, &payload,
+                                      &payload_size) == QW_MDD_OK)
+        printf("image: %zu bytes\n", payload_size);
+    for (index = 0u; index < qw_mdd_document_resource_count(resources);
+         ++index) {
+        const char *name = NULL;
+        size_t name_size = 0u;
+        if (qw_mdd_document_resource_at(resources, index, &name, &name_size,
+                                        &payload, &payload_size) != QW_MDD_OK)
+            continue;
+        printf("%.*s (%zu bytes)\n", (int)name_size, name, payload_size);
+    }
+}
+qw_mdd_document_free(resources);
+```
+
+## 13. Related packages
 
 - `Quirewise::Runtime` — shared status and format enums.
 - `Quirewise::Archive` — ZIP container access used by EPUB and archive wrappers.
+- `Quirewise::Charset` — legacy encoding conversion for MDict keys and articles
+  and for PML/HTMLZ payloads that are not UTF-8.
+- `Quirewise::Compression` — zlib block inflation and Adler-32 verification for
+  the MDict index and record blocks.
+- `Quirewise::Crypto` — RIPEMD-128 for the MDict `Encrypted="2"` block keys.
 - `Quirewise::Data` — XML parsing used by EPUB and FB2.
 - `Quirewise::Text` — plain-text detection used by TXTZ/PMLZ.
-- `Quirewise::Charset` — legacy encoding conversion when PML or HTMLZ payloads
-  are not UTF-8.
 - `Quirewise::Document` — layout/PDF rendering for the documents these readers
   produce.
 
-## 12. License
+## 14. License
 
 MIT. See `LICENSE`.
