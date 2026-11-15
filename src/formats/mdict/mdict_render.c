@@ -80,6 +80,82 @@ static int mdict_append_escaped_record(QwMdictBuffer *buffer,
     return qw_mdict_buffer_append_text(buffer, "</p>\n");
 }
 
+
+static int mdict_ascii_folded_equal(const uint8_t *left, size_t left_size,
+                                    const uint8_t *right, size_t right_size)
+{
+    size_t index;
+    if (left_size != right_size) return 0;
+    for (index = 0u; index < left_size; ++index) {
+        unsigned char a = left[index];
+        unsigned char b = right[index];
+        if (a >= 'A' && a <= 'Z') a = (unsigned char)(a + 32);
+        if (b >= 'A' && b <= 'Z') b = (unsigned char)(b + 32);
+        if (a != b) return 0;
+    }
+    return 1;
+}
+
+/* Resolve "@@@LINK=target" redirect chains (bounded to 8 hops). */
+static const uint8_t *mdict_resolve_record(const QwMdictContainer *container,
+                                           size_t index, size_t *out_size)
+{
+    const uint8_t *record;
+    size_t depth;
+
+    if (!container || !out_size) return NULL;
+    record = qw_mdict_record_at(container, index, out_size);
+    for (depth = 0u; record && depth < 8u; ++depth) {
+        size_t size = mdict_record_length(record, *out_size);
+        size_t target_size;
+        const uint8_t *target;
+        size_t next;
+        if (size < 8u || memcmp(record, "@@@LINK=", 8u) != 0) break;
+        target = record + 8u;
+        target_size = size - 8u;
+        while (target_size &&
+               (target[target_size - 1u] == '\r' ||
+                target[target_size - 1u] == '\n'))
+            --target_size;
+        for (next = 0u; next < container->table.count; ++next) {
+            if (mdict_ascii_folded_equal(
+                    container->table.key_text.data +
+                        container->table.key_offsets[next],
+                    container->table.key_lengths[next], target,
+                    target_size))
+                break;
+        }
+        if (next >= container->table.count) break;
+        record = qw_mdict_record_at(container, next, out_size);
+    }
+    return record;
+}
+
+/* entry://word -> word: the layout/text routes cannot follow dictionary
+ * scheme links, so the prefix is stripped and the target stays visible. */
+static uint8_t *mdict_strip_entry_scheme(const uint8_t *record, size_t size,
+                                         size_t *out_size)
+{
+    uint8_t *stripped;
+    size_t index = 0u;
+    size_t written = 0u;
+
+    if (!record || !out_size) return NULL;
+    stripped = (uint8_t *)malloc(size + 1u);
+    if (!stripped) return NULL;
+    while (index < size) {
+        if (index + 8u <= size &&
+            mdict_ascii_folded_equal(record + index, 8u,
+                                     (const uint8_t *)"entry://", 8u)) {
+            index += 8u;
+            continue;
+        }
+        stripped[written++] = record[index++];
+    }
+    stripped[written] = 0u;
+    *out_size = written;
+    return stripped;
+}
 int qw_mdict_build_html(const QwMdictContainer *container, uint8_t **out_html,
                         size_t *out_size, char *error, size_t error_capacity)
 {
@@ -137,18 +213,25 @@ int qw_mdict_build_html(const QwMdictContainer *container, uint8_t **out_html,
         if (status != QW_MDICT_OK) break;
         status = qw_mdict_buffer_append_text(&html, "</h2>\n");
         if (status != QW_MDICT_OK) break;
-        record = qw_mdict_record_at(container, index, &record_size);
+        record = mdict_resolve_record(container, index, &record_size);
         if (!record) {
             status = QW_MDICT_ERR_FORMAT;
             break;
         }
         record_size = mdict_record_length(record, record_size);
-        if (html_records) {
-            status = qw_mdict_buffer_append(&html, record, record_size);
-            if (status == QW_MDICT_OK)
-                status = qw_mdict_buffer_append_text(&html, "\n");
-        } else {
-            status = mdict_append_escaped_record(&html, record, record_size);
+        {
+            uint8_t *stripped = mdict_strip_entry_scheme(record, record_size,
+                                                         &record_size);
+            if (stripped) record = stripped;
+            if (html_records) {
+                status = qw_mdict_buffer_append(&html, record, record_size);
+                if (status == QW_MDICT_OK)
+                    status = qw_mdict_buffer_append_text(&html, "\n");
+            } else {
+                status = mdict_append_escaped_record(&html, record,
+                                                     record_size);
+            }
+            free(stripped);
         }
     }
     if (status != QW_MDICT_OK) {
@@ -292,14 +375,20 @@ int qw_mdict_build_text(const QwMdictContainer *container, uint8_t **out_text,
             status = qw_mdict_buffer_append_byte(&text, '\n');
             if (status != QW_MDICT_OK) break;
         }
-        record = qw_mdict_record_at(container, index, &record_size);
+        record = mdict_resolve_record(container, index, &record_size);
         if (!record) {
             status = QW_MDICT_ERR_FORMAT;
             break;
         }
         record_size = mdict_record_length(record, record_size);
-        status = mdict_append_text_record(&text, record, record_size,
-                                          html_records);
+        {
+            uint8_t *stripped = mdict_strip_entry_scheme(record, record_size,
+                                                         &record_size);
+            if (stripped) record = stripped;
+            status = mdict_append_text_record(&text, record, record_size,
+                                              html_records);
+            free(stripped);
+        }
         if (status != QW_MDICT_OK) break;
         if (!text.size || text.data[text.size - 1u] != '\n') {
             status = qw_mdict_buffer_append_byte(&text, '\n');

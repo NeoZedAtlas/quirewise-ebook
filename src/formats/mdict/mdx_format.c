@@ -69,7 +69,7 @@ static int mdx_open_layout(const void *data, size_t size,
     out_document->dispose = mdx_layout_dispose;
     if (report) {
         snprintf(report->note, sizeof(report->note),
-                 "MDict dictionary rendered through the shared HTML layout; "
+                 "MDict dictionary rendered through the shared HTML layout; @@@LINK redirects resolved and entry:// prefixes stripped; "
                  "MDD image resources are not embedded");
     }
     return QW_EBOOK_OK;

@@ -45,6 +45,12 @@ MDX_ENTRIES = [
     ("gamma", "<p>Quirewise sample definition for gamma</p>"),
 ]
 
+MDX_LINK_ENTRIES = [
+    ("alpha", '<p>Alpha definition links to <a href="entry://beta">beta</a>.</p>'),
+    ("alias", "@@@LINK=alpha"),
+    ("beta", "<p>Beta definition body</p>"),
+]
+
 MDD_ENTRIES = [
     ("\\sample.txt", b"Quirewise sample resource\n"),
     ("\\image.gif", b"GIF89a" + bytes(range(1, 16))),
@@ -139,7 +145,11 @@ def main() -> None:
     (HERE / "tiny.mdx").write_bytes(mdx)
     mdd = build(True, MDD_HEADER, MDD_ENTRIES)
     (HERE / "tiny.mdd").write_bytes(mdd)
-    print(f"wrote tiny.mdx ({len(mdx)} bytes) and tiny.mdd ({len(mdd)} bytes)")
+    links = build(False, MDX_HEADER, [(key, record.encode("utf-8"))
+                                    for key, record in MDX_LINK_ENTRIES])
+    (HERE / "links.mdx").write_bytes(links)
+    print(f"wrote tiny.mdx ({len(mdx)} bytes), tiny.mdd ({len(mdd)} bytes) "
+          f"and links.mdx ({len(links)} bytes)")
 
 
 if __name__ == "__main__":

@@ -80,7 +80,15 @@ if(BUILD_TESTING)
         Quirewise::Ebook Quirewise::Compression Quirewise::Crypto)
     add_test(NAME quirewise_ebook_mdict COMMAND quirewise_ebook_mdict_test)
 
-    add_executable(quirewise_ebook_archive_write_test
+    add_executable(quirewise_ebook_mdx_link_test tests/mdx_link_test.c)
+target_compile_features(quirewise_ebook_mdx_link_test PRIVATE c_std_11)
+target_compile_definitions(quirewise_ebook_mdx_link_test PRIVATE
+    QUIREWISE_LINKS_MDX="${CMAKE_CURRENT_SOURCE_DIR}/tests/data/links.mdx")
+target_link_libraries(quirewise_ebook_mdx_link_test PRIVATE
+    Quirewise::Ebook Quirewise::Compression Quirewise::Crypto)
+add_test(NAME quirewise_ebook_mdx_links COMMAND quirewise_ebook_mdx_link_test)
+
+add_executable(quirewise_ebook_archive_write_test
         tests/archive_write_test.c)
     target_compile_features(quirewise_ebook_archive_write_test PRIVATE c_std_11)
     target_link_libraries(quirewise_ebook_archive_write_test PRIVATE
