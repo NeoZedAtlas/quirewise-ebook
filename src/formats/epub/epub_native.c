@@ -10,6 +10,7 @@
 #include "../archive/zip_native.h"
 
 #include <stdio.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <wchar.h>
@@ -616,13 +617,20 @@ static int epub_layout_external_link(const char *href)
 }
 
 static int epub_layout_collect_inline(QwEpubLayoutOwner *owner,
-                                      QwEpubParagraphBuilder *builder,
-                                      QwXmlNode *nodes, unsigned style_flags,
-                                      const char *link_target, size_t depth)
+                                       QwEpubParagraphBuilder *builder,
+                                       QwXmlNode *nodes, unsigned style_flags,
+                                       const char *link_target, size_t depth);
+
+static int epub_layout_collect_inline_node(QwEpubLayoutOwner *owner,
+                                           QwEpubParagraphBuilder *builder,
+                                           QwXmlNode *node,
+                                           unsigned style_flags,
+                                           const char *link_target,
+                                           size_t depth)
 {
-    QwXmlNode *node;
     if (depth > 128u) return QW_EBOOK_ERR_UNSUPPORTED;
-    for (node = nodes; node; node = qw_xml_next(node)) {
+    if (!node) return QW_EBOOK_OK;
+    {
         const char *tag = qw_xml_tag(node);
         if (!tag) {
             const char *text = qw_xml_text(node);
@@ -630,14 +638,15 @@ static int epub_layout_collect_inline(QwEpubLayoutOwner *owner,
                                                 style_flags, link_target)) {
                 return QW_EBOOK_ERR_OUT_OF_MEMORY;
             }
-            continue;
+            return QW_EBOOK_OK;
         }
         if (strcmp(epub_local_name(tag), "script") == 0 ||
-            strcmp(epub_local_name(tag), "style") == 0) continue;
+            strcmp(epub_local_name(tag), "style") == 0)
+            return QW_EBOOK_OK;
         if (strcmp(epub_local_name(tag), "br") == 0) {
             if (!epub_layout_run_append(owner, builder, " ", style_flags,
                                         link_target)) return QW_EBOOK_ERR_OUT_OF_MEMORY;
-            continue;
+            return QW_EBOOK_OK;
         }
         if (strcmp(epub_local_name(tag), "img") == 0) {
             if (!epub_layout_append_image(owner, builder,
@@ -645,7 +654,7 @@ static int epub_layout_collect_inline(QwEpubLayoutOwner *owner,
                                           qw_xml_att(node, "alt"),
                                           style_flags))
                 return QW_EBOOK_ERR_OUT_OF_MEMORY;
-            continue;
+            return QW_EBOOK_OK;
         }
         if (strcmp(epub_local_name(tag), "td") == 0 ||
             strcmp(epub_local_name(tag), "th") == 0) {
@@ -672,6 +681,89 @@ static int epub_layout_collect_inline(QwEpubLayoutOwner *owner,
                     qw_xml_down(node), child_flags, child_link, depth + 1u);
                 if (rc != QW_EBOOK_OK) return rc;
             }
+        }
+    }
+    return QW_EBOOK_OK;
+}
+
+static int epub_layout_collect_inline(QwEpubLayoutOwner *owner,
+                                       QwEpubParagraphBuilder *builder,
+                                       QwXmlNode *nodes, unsigned style_flags,
+                                       const char *link_target, size_t depth)
+{
+    QwXmlNode *node;
+    for (node = nodes; node; node = qw_xml_next(node)) {
+        int rc = epub_layout_collect_inline_node(owner, builder, node,
+                                                 style_flags, link_target,
+                                                 depth);
+        if (rc != QW_EBOOK_OK) return rc;
+    }
+    return QW_EBOOK_OK;
+}
+
+static int epub_layout_flush_paragraph(QwEpubLayoutOwner *owner,
+                                       QwLayoutSection *section,
+                                       QwEpubParagraphBuilder *builder,
+                                       unsigned heading_level,
+                                       unsigned flags);
+
+/* Nested <ul>/<ol> become one list-item paragraph per item. The item depth is
+ * stored in the high style bits so renderers can rebuild nested markup. */
+static int epub_layout_list_block(QwEpubLayoutOwner *owner,
+                                  QwLayoutSection *section, QwXmlNode *list,
+                                  unsigned style_flags, size_t depth,
+                                  unsigned list_depth)
+{
+    QwXmlNode *item;
+    for (item = qw_xml_down(list); item; item = qw_xml_next(item)) {
+        const char *item_tag = qw_xml_tag(item);
+        QwEpubParagraphBuilder paragraph = {0};
+        QwXmlNode *child;
+        unsigned item_flags;
+        if (!item_tag || strcmp(epub_local_name(item_tag), "li") != 0)
+            continue;
+        item_flags = style_flags | QW_EPUB_STYLE_LIST_ITEM |
+                     ((list_depth & QW_EPUB_STYLE_LIST_DEPTH_MASK) << QW_EPUB_STYLE_LIST_DEPTH_SHIFT);
+        for (child = qw_xml_down(item); child; child = qw_xml_next(child)) {
+            const char *child_tag = qw_xml_tag(child);
+            if (child_tag) {
+                const char *name = epub_local_name(child_tag);
+                if (strcmp(name, "ul") == 0 || strcmp(name, "ol") == 0) {
+                    int rc = epub_layout_flush_paragraph(owner, section,
+                                                         &paragraph, 0u,
+                                                         item_flags);
+                    if (rc != QW_EBOOK_OK) {
+                        epub_layout_paragraph_builder_dispose(&paragraph);
+                        return rc;
+                    }
+                    rc = epub_layout_list_block(owner, section, child,
+                                                style_flags, depth + 1u,
+                                                list_depth + 1u);
+                    if (rc != QW_EBOOK_OK) {
+                        epub_layout_paragraph_builder_dispose(&paragraph);
+                        return rc;
+                    }
+                    continue;
+                }
+            }
+            {
+                unsigned child_flags = child_tag
+                    ? epub_layout_style_for_tag(child_tag, item_flags)
+                    : item_flags;
+                int rc = epub_layout_collect_inline_node(owner, &paragraph,
+                                                         child, child_flags,
+                                                         NULL, depth + 1u);
+                if (rc != QW_EBOOK_OK) {
+                    epub_layout_paragraph_builder_dispose(&paragraph);
+                    return rc;
+                }
+            }
+        }
+        {
+            int rc = epub_layout_flush_paragraph(owner, section, &paragraph,
+                                                 0u, item_flags);
+            epub_layout_paragraph_builder_dispose(&paragraph);
+            if (rc != QW_EBOOK_OK) return rc;
         }
     }
     return QW_EBOOK_OK;
@@ -1033,6 +1125,16 @@ static int epub_layout_collect_flow(QwEpubLayoutOwner *owner,
             if (rc != QW_EBOOK_OK) return rc;
             continue;
         }
+        if (strcmp(epub_local_name(tag), "ul") == 0 ||
+            strcmp(epub_local_name(tag), "ol") == 0) {
+                    int rc = epub_layout_flush_paragraph(owner, section, pending, 0u,
+                                                 style_flags);
+            if (rc != QW_EBOOK_OK) return rc;
+            rc = epub_layout_list_block(owner, section, node, style_flags,
+                                        depth + 1u, 0u);
+            if (rc != QW_EBOOK_OK) return rc;
+            continue;
+        }
         if (epub_layout_tag_is_block(tag)) {
             QwEpubParagraphBuilder paragraph = {0};
             unsigned level = epub_layout_heading_level(tag);
@@ -1041,9 +1143,6 @@ static int epub_layout_collect_flow(QwEpubLayoutOwner *owner,
                                                   style_flags);
             if (rc != QW_EBOOK_OK) return rc;
             if (level) flags |= QW_LAYOUT_STYLE_HEADING;
-            if (strcmp(epub_local_name(tag), "li") == 0) {
-                flags |= QW_EPUB_STYLE_LIST_ITEM;
-            }
             if (strcmp(epub_local_name(tag), "pre") == 0) {
                 flags |= QW_LAYOUT_STYLE_CODE | QW_EPUB_STYLE_PRE;
             }
