@@ -933,9 +933,6 @@ static int epub_layout_append_image(QwEpubLayoutOwner *owner,
                                     unsigned style_flags)
 {
     if (!owner || !builder) return 0;
-    fprintf(stderr, "DBG append_image src=%s zip=%p chapter=%s\n",
-            src ? src : "(null)", (void *)owner->zip,
-            owner->chapter_path ? owner->chapter_path : "(null)");
     if (src && src[0]) {
         if (strncmp(src, "data:image/", 11u) == 0) {
             size_t length = strlen(src);
@@ -966,14 +963,8 @@ static int epub_layout_append_image(QwEpubLayoutOwner *owner,
                 directory[0] = '\0';
             }
             resolved = epub_resolve_href(directory, src);
-            fprintf(stderr, "DBG resolve dir=%s src=%s -> %s\n", directory,
-                    src, resolved ? resolved : "(null)");
             if (!resolved) return 1;
             data = epub_extract_named(owner->zip, resolved, &data_size);
-            fprintf(stderr, "DBG resolved=%s data=%p size=%zu mime=%s\n",
-                    resolved, data, data_size,
-                    epub_image_mime(resolved) ? epub_image_mime(resolved)
-                                              : "(none)");
             if (data && data_size > 0u && data_size <= 8u * 1024u * 1024u &&
                 data_size <= 32u * 1024u * 1024u - owner->image_bytes &&
                 (mime = epub_image_mime(resolved)) != NULL) {
