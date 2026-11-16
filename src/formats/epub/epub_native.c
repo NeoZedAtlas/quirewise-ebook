@@ -1171,6 +1171,10 @@ static int epub_layout_collect_flow(QwEpubLayoutOwner *owner,
             int rc;
             if (strcmp(epub_local_name(tag), "blockquote") == 0)
                 flags |= QW_EPUB_STYLE_QUOTE;
+            else if (strcmp(epub_local_name(tag), "dt") == 0)
+                flags |= QW_EPUB_STYLE_DEF_TERM;
+            else if (strcmp(epub_local_name(tag), "dd") == 0)
+                flags |= QW_EPUB_STYLE_DEF_DETAIL;
             rc = epub_layout_flush_paragraph(owner, section, pending, 0u,
                                              style_flags);
             if (rc != QW_EBOOK_OK) return rc;
