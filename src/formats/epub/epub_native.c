@@ -1168,8 +1168,11 @@ static int epub_layout_collect_flow(QwEpubLayoutOwner *owner,
             QwEpubParagraphBuilder paragraph = {0};
             unsigned level = epub_layout_heading_level(tag);
             unsigned flags = epub_layout_style_for_tag(tag, style_flags);
-            int rc = epub_layout_flush_paragraph(owner, section, pending, 0u,
-                                                  style_flags);
+            int rc;
+            if (strcmp(epub_local_name(tag), "blockquote") == 0)
+                flags |= QW_EPUB_STYLE_QUOTE;
+            rc = epub_layout_flush_paragraph(owner, section, pending, 0u,
+                                             style_flags);
             if (rc != QW_EBOOK_OK) return rc;
             if (level) flags |= QW_LAYOUT_STYLE_HEADING;
             if (strcmp(epub_local_name(tag), "pre") == 0) {
