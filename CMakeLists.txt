@@ -74,7 +74,17 @@ if(BUILD_TESTING)
     add_test(NAME quirewise_ebook_mobi_palm_doc
         COMMAND quirewise_ebook_mobi_palm_doc_test)
 
-    add_executable(quirewise_ebook_mdict_test tests/mdict_test.c)
+    add_executable(quirewise_ebook_mdict_engine12_test
+    tests/mdict_engine12_test.c)
+target_compile_features(quirewise_ebook_mdict_engine12_test PRIVATE c_std_11)
+target_compile_definitions(quirewise_ebook_mdict_engine12_test PRIVATE
+    QUIREWISE_ENGINE12_MDX="${CMAKE_CURRENT_SOURCE_DIR}/tests/data/engine12.mdx")
+target_link_libraries(quirewise_ebook_mdict_engine12_test PRIVATE
+    Quirewise::Ebook)
+add_test(NAME quirewise_ebook_mdict_engine12
+    COMMAND quirewise_ebook_mdict_engine12_test)
+
+add_executable(quirewise_ebook_mdict_test tests/mdict_test.c)
     target_compile_features(quirewise_ebook_mdict_test PRIVATE c_std_11)
     target_link_libraries(quirewise_ebook_mdict_test PRIVATE
         Quirewise::Ebook Quirewise::Compression Quirewise::Crypto)

@@ -441,11 +441,10 @@ static int mdict_parse_header(const uint8_t *bytes, size_t size,
         return mdict_fail(error, error_capacity, QW_MDICT_ERR_FORMAT,
                           "MDict header has no engine version");
     }
-    if (meta->engine_version < 2.0) {
+    if (meta->engine_version < 1.2) {
         qw_mdict_buffer_free(&text);
         return mdict_fail(error, error_capacity, QW_MDICT_ERR_UNSUPPORTED,
-                          "MDict engine 1.2 files use LZO blocks and are not "
-                          "supported; rebuild with MdxBuilder 3.x");
+                          "MDict engine versions before 1.2 are not supported");
     }
     if (meta->engine_version >= 3.0) {
         qw_mdict_buffer_free(&text);
@@ -528,6 +527,163 @@ static void mdict_fast_decrypt(uint8_t *data, size_t size,
         previous = data[index];
         data[index] = value;
     }
+}
+
+/* LZO1X decompressor used by MDict engine 1.2 blocks. The decoder mirrors
+ * the miniLZO state machine and rejects any out-of-range copy or truncation. */
+static int mdict_lzo_decompress(const uint8_t *input, size_t input_size,
+                                size_t decoded_size, uint8_t **out_data,
+                                char *error, size_t error_capacity)
+{
+    const uint8_t *ip = input;
+    const uint8_t *ip_end = input + input_size;
+    uint8_t *out;
+    uint8_t *op;
+    uint8_t *op_end;
+    const uint8_t *m_pos;
+    size_t t;
+
+    if (!input || !decoded_size)
+        return mdict_fail(error, error_capacity, QW_MDICT_ERR_FORMAT,
+                          "MDict LZO block has no decoded data");
+    out = (uint8_t *)malloc(decoded_size);
+    if (!out)
+        return mdict_fail(error, error_capacity, QW_MDICT_ERR_OUT_OF_MEMORY,
+                          "out of memory while decoding an MDict LZO block");
+    op = out;
+    op_end = out + decoded_size;
+
+    if (input_size < 3u || op_end - op < 3)
+        goto corrupt;
+    if (*ip > 17u) {
+        t = (size_t)(*ip++) - 17u;
+        if (t < 4u) goto match_next;
+        if ((size_t)(ip_end - ip) < t || (size_t)(op_end - op) < t)
+            goto corrupt;
+        memcpy(op, ip, t);
+        op += t;
+        ip += t;
+        goto first_literal_run;
+    }
+    for (;;) {
+        if (ip >= ip_end) goto corrupt;
+        t = *ip++;
+        if (t >= 16u) goto match;
+        if (t == 0u) {
+            while (ip < ip_end && *ip == 0u) {
+                t += 255u;
+                ++ip;
+            }
+            if (ip >= ip_end) goto corrupt;
+            t += 15u + *ip++;
+        }
+        t += 3u;
+        if ((size_t)(ip_end - ip) < t || (size_t)(op_end - op) < t)
+            goto corrupt;
+        memcpy(op, ip, t);
+        op += t;
+        ip += t;
+first_literal_run:
+        if (ip >= ip_end) goto corrupt;
+        t = *ip++;
+        if (t >= 16u) goto match;
+        {
+            const uint8_t *m_pos = op - (1u + 0x0800u);
+            m_pos -= t >> 2;
+            if (ip >= ip_end) goto corrupt;
+            m_pos -= (size_t)(*ip++) << 2;
+            if (m_pos < out || (size_t)(op_end - op) < 3)
+                goto corrupt;
+            *op++ = *m_pos++;
+            *op++ = *m_pos++;
+            *op++ = *m_pos;
+        }
+        goto match_done;
+match:
+        if (t >= 64u) {
+            m_pos = op - 1;
+            m_pos -= (t >> 2) & 7u;
+            if (ip >= ip_end) goto corrupt;
+            m_pos -= (size_t)(*ip++) << 3;
+            t = (t >> 5) - 1u;
+            goto copy_match;
+        } else if (t >= 32u) {
+            t &= 31u;
+            if (t == 0u) {
+                while (ip < ip_end && *ip == 0u) {
+                    t += 255u;
+                    ++ip;
+                }
+                if (ip >= ip_end) goto corrupt;
+                t += 31u + *ip++;
+            }
+            if (ip_end - ip < 2) goto corrupt;
+            m_pos = op - 1;
+            m_pos -= (size_t)(ip[0] >> 2) + ((size_t)ip[1] << 6);
+            ip += 2;
+            goto copy_match;
+        } else if (t >= 16u) {
+            m_pos = op;
+            m_pos -= (t & 8u) << 11;
+            t &= 7u;
+            if (t == 0u) {
+                while (ip < ip_end && *ip == 0u) {
+                    t += 255u;
+                    ++ip;
+                }
+                if (ip >= ip_end) goto corrupt;
+                t += 7u + *ip++;
+            }
+            if (ip_end - ip < 2) goto corrupt;
+            m_pos -= (size_t)(ip[0] >> 2) + ((size_t)ip[1] << 6);
+            ip += 2;
+            if (m_pos == op) goto finished;
+            m_pos -= 0x4000u;
+            if (m_pos < out) goto corrupt;
+            t += 2u;
+            if ((size_t)(op_end - op) < t) goto corrupt;
+            while (t--) *op++ = *m_pos++;
+            goto match_done;
+        } else {
+            m_pos = op - 1;
+            m_pos -= t >> 2;
+            if (ip >= ip_end) goto corrupt;
+            m_pos -= (size_t)(*ip++) << 2;
+            if (m_pos < out || (size_t)(op_end - op) < 2)
+                goto corrupt;
+            *op++ = *m_pos++;
+            *op++ = *m_pos;
+            goto match_done;
+        }
+copy_match:
+        t += 2u;
+        if (m_pos < out || m_pos >= op || (size_t)(op_end - op) < t)
+            goto corrupt;
+        while (t--) *op++ = *m_pos++;
+match_done:
+        if (ip < input + 2u) goto corrupt;
+        t = (size_t)(ip[-2] & 3u);
+        if (t == 0u) continue;
+match_next:
+        if ((size_t)(ip_end - ip) < t || (size_t)(op_end - op) < t)
+            goto corrupt;
+        *op++ = *ip++;
+        if (t > 1u) {
+            *op++ = *ip++;
+            if (t > 2u) *op++ = *ip++;
+        }
+        if (ip >= ip_end) goto corrupt;
+        t = *ip++;
+        goto match;
+    }
+finished:
+    if (op != op_end) goto corrupt;
+    *out_data = out;
+    return QW_MDICT_OK;
+corrupt:
+    free(out);
+    return mdict_fail(error, error_capacity, QW_MDICT_ERR_DECODE,
+                      "MDict LZO block is corrupt");
 }
 
 static int mdict_inflate(const uint8_t *input, size_t input_size,
@@ -628,10 +784,18 @@ static int mdict_decode_block(const uint8_t *block, size_t block_size,
         return QW_MDICT_OK;
     }
     if (compression == 1u) {
+        int status = mdict_lzo_decompress(payload, payload_size, decoded_size,
+                                          out_data, error, error_capacity);
         free(payload);
-        return mdict_fail(error, error_capacity, QW_MDICT_ERR_UNSUPPORTED,
-                          "MDict LZO blocks belong to engine 1.2 and are not "
-                          "supported");
+        if (status != QW_MDICT_OK) return status;
+        computed = qw_compression_adler32(*out_data, decoded_size);
+        if (computed != adler) {
+            free(*out_data);
+            *out_data = NULL;
+            return mdict_fail(error, error_capacity, QW_MDICT_ERR_DECODE,
+                              "MDict block checksum does not match");
+        }
+        return QW_MDICT_OK;
     }
     if (compression != 2u) {
         free(payload);
@@ -672,9 +836,14 @@ static int mdict_decode_key_info(const uint8_t *block, size_t block_size,
         return mdict_fail(error, error_capacity, QW_MDICT_ERR_FORMAT,
                           "MDict key-block index is truncated");
     descriptor = mdict_load_le32(block);
-    if ((descriptor & 0x0fu) != 2u)
-        return mdict_fail(error, error_capacity, QW_MDICT_ERR_UNSUPPORTED,
-                          "MDict key-block index must be zlib-compressed");
+    {
+        unsigned compression = descriptor & 0x0fu;
+        if (compression != 1u && compression != 2u)
+            return mdict_fail(error, error_capacity,
+                              QW_MDICT_ERR_UNSUPPORTED,
+                              "MDict key-block index has an unsupported "
+                              "compression method");
+    }
     adler = mdict_load_be32(block + 4u);
     payload_size = block_size - 8u;
     payload = (uint8_t *)malloc(payload_size ? payload_size : 1u);
@@ -697,8 +866,12 @@ static int mdict_decode_key_info(const uint8_t *block, size_t block_size,
         }
         mdict_fast_decrypt(payload, payload_size, key);
     }
-    status = mdict_inflate(payload, payload_size, decoded_size, out_data, error,
-                           error_capacity);
+    if ((descriptor & 0x0fu) == 1u)
+        status = mdict_lzo_decompress(payload, payload_size, decoded_size,
+                                      out_data, error, error_capacity);
+    else
+        status = mdict_inflate(payload, payload_size, decoded_size, out_data,
+                               error, error_capacity);
     free(payload);
     if (status != QW_MDICT_OK) return status;
     computed = qw_compression_adler32(*out_data, decoded_size);
