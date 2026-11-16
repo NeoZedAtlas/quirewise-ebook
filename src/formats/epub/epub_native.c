@@ -984,6 +984,26 @@ static int epub_layout_flatten_table(QwEpubLayoutOwner *owner,
 
     rc = epub_layout_flush_paragraph(owner, section, pending, 0u, style_flags);
     if (rc != QW_EBOOK_OK) return rc;
+    {
+        QwXmlNode *child;
+        for (child = qw_xml_down(table); child; child = qw_xml_next(child)) {
+            const char *tag = qw_xml_tag(child);
+            if (tag && strcmp(epub_local_name(tag), "caption") == 0) {
+                QwEpubParagraphBuilder caption = {0};
+                unsigned caption_flags = style_flags |
+                                         QW_EPUB_STYLE_TABLE_CAPTION;
+                rc = epub_layout_collect_inline(owner, &caption,
+                                                qw_xml_down(child),
+                                                caption_flags, NULL,
+                                                depth + 1u);
+                if (rc == QW_EBOOK_OK)
+                    rc = epub_layout_flush_paragraph(owner, section, &caption,
+                                                     0u, caption_flags);
+                epub_layout_paragraph_builder_dispose(&caption);
+                if (rc != QW_EBOOK_OK) return rc;
+            }
+        }
+    }
     return epub_layout_table_walk(owner, section, qw_xml_down(table),
                                   style_flags, depth + 1u);
 }
