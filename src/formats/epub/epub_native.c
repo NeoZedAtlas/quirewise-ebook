@@ -486,8 +486,17 @@ static int epub_layout_run_append(QwEpubLayoutOwner *owner,
         previous_ends_with_space = last->text_size != 0u &&
             last->utf8_text[last->text_size - 1u] == ' ';
     }
-    normalized = epub_layout_normalize_text(text, has_previous,
-        previous_ends_with_space, &text_size);
+    if (style_flags & QW_EPUB_STYLE_PRE) {
+        size_t length = strlen(text);
+        normalized = (char *)malloc(length + 1u);
+        if (normalized) {
+            memcpy(normalized, text, length + 1u);
+            text_size = length;
+        }
+    } else {
+        normalized = epub_layout_normalize_text(text, has_previous,
+            previous_ends_with_space, &text_size);
+    }
     if (!normalized) return text_size == SIZE_MAX ? 0 : 1;
     if (owner->layout_text_bytes > QW_EPUB_MAX_LAYOUT_TEXT_BYTES ||
         text_size > QW_EPUB_MAX_LAYOUT_TEXT_BYTES - owner->layout_text_bytes) {
@@ -1046,7 +1055,8 @@ static int epub_layout_collect_flow(QwEpubLayoutOwner *owner,
         if (strcmp(epub_local_name(tag), "script") == 0 ||
             strcmp(epub_local_name(tag), "style") == 0) continue;
         if (strcmp(epub_local_name(tag), "br") == 0) {
-            if (!epub_layout_run_append(owner, pending, " ", style_flags, NULL)) {
+            const char *br = (style_flags & QW_EPUB_STYLE_PRE) ? "\n" : " ";
+            if (!epub_layout_run_append(owner, pending, br, style_flags, NULL)) {
                 return QW_EBOOK_ERR_OUT_OF_MEMORY;
             }
             continue;
