@@ -894,6 +894,27 @@ static int epub_layout_table_row(QwEpubLayoutOwner *owner,
             size_t cell_start = paragraph.run_count;
             const char *cell_name = epub_local_name(cell_tag);
             int header = strcmp(cell_name, "th") == 0;
+            unsigned colspan = 1u;
+            unsigned rowspan = 1u;
+            const char *span;
+            span = qw_xml_att(cell, "colspan");
+            if (span && *span) {
+                unsigned value = 0u;
+                while (*span >= '0' && *span <= '9' && value < 15u) {
+                    value = value * 10u + (unsigned)(*span - '0');
+                    ++span;
+                }
+                if (value > 0u) colspan = value;
+            }
+            span = qw_xml_att(cell, "rowspan");
+            if (span && *span) {
+                unsigned value = 0u;
+                while (*span >= '0' && *span <= '9' && value < 15u) {
+                    value = value * 10u + (unsigned)(*span - '0');
+                    ++span;
+                }
+                if (value > 0u) rowspan = value;
+            }
             rc = epub_layout_collect_inline(owner, &paragraph,
                                             qw_xml_down(cell), style_flags,
                                             NULL, depth + 1u);
@@ -904,6 +925,12 @@ static int epub_layout_table_row(QwEpubLayoutOwner *owner,
             if (paragraph.run_count > cell_start) {
                 paragraph.runs[cell_start].style_flags |=
                     QW_EPUB_STYLE_TABLE_CELL;
+                paragraph.runs[cell_start].style_flags |=
+                    (colspan & QW_EPUB_TABLE_COLSPAN_MASK)
+                    << QW_EPUB_TABLE_COLSPAN_SHIFT;
+                paragraph.runs[cell_start].style_flags |=
+                    (rowspan & QW_EPUB_TABLE_ROWSPAN_MASK)
+                    << QW_EPUB_TABLE_ROWSPAN_SHIFT;
                 if (header)
                     paragraph.runs[cell_start].style_flags |=
                         QW_EPUB_STYLE_TABLE_HEADER;

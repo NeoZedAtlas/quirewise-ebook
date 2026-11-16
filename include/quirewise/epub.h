@@ -39,6 +39,10 @@ typedef enum QwEpubStyleFlags {
 /* List nesting depth is stored in style bits 11..18 (0 = outermost list). */
 #define QW_EPUB_STYLE_LIST_DEPTH_SHIFT 11u
 #define QW_EPUB_STYLE_LIST_DEPTH_MASK 0xffu
+#define QW_EPUB_TABLE_COLSPAN_SHIFT 19u
+#define QW_EPUB_TABLE_COLSPAN_MASK 0x0fu
+#define QW_EPUB_TABLE_ROWSPAN_SHIFT 23u
+#define QW_EPUB_TABLE_ROWSPAN_MASK 0x0fu
 
 typedef struct QwEpubDocument QwEpubDocument;
 
