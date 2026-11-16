@@ -33,7 +33,8 @@ typedef enum QwEpubStyleFlags {
     QW_EPUB_STYLE_PRE = 1u << 8,
     /* Run text is a data: URI for an embedded image (base64 payload). */
     QW_EPUB_STYLE_IMAGE = 1u << 9,
-    QW_EPUB_STYLE_TABLE_HEADER = 1u << 10
+    QW_EPUB_STYLE_TABLE_HEADER = 1u << 10,
+    QW_EPUB_STYLE_LIST_ORDERED = 1u << 27
 } QwEpubStyleFlags;
 
 /* List nesting depth is stored in style bits 11..18 (0 = outermost list). */

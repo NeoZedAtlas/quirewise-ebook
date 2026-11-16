@@ -712,7 +712,7 @@ static int epub_layout_flush_paragraph(QwEpubLayoutOwner *owner,
 static int epub_layout_list_block(QwEpubLayoutOwner *owner,
                                   QwLayoutSection *section, QwXmlNode *list,
                                   unsigned style_flags, size_t depth,
-                                  unsigned list_depth)
+                                  unsigned list_depth, int ordered)
 {
     QwXmlNode *item;
     for (item = qw_xml_down(list); item; item = qw_xml_next(item)) {
@@ -723,6 +723,7 @@ static int epub_layout_list_block(QwEpubLayoutOwner *owner,
         if (!item_tag || strcmp(epub_local_name(item_tag), "li") != 0)
             continue;
         item_flags = style_flags | QW_EPUB_STYLE_LIST_ITEM |
+                     (ordered ? QW_EPUB_STYLE_LIST_ORDERED : 0u) |
                      ((list_depth & QW_EPUB_STYLE_LIST_DEPTH_MASK) << QW_EPUB_STYLE_LIST_DEPTH_SHIFT);
         for (child = qw_xml_down(item); child; child = qw_xml_next(child)) {
             const char *child_tag = qw_xml_tag(child);
@@ -736,9 +737,9 @@ static int epub_layout_list_block(QwEpubLayoutOwner *owner,
                         epub_layout_paragraph_builder_dispose(&paragraph);
                         return rc;
                     }
-                    rc = epub_layout_list_block(owner, section, child,
-                                                style_flags, depth + 1u,
-                                                list_depth + 1u);
+                    rc = epub_layout_list_block(
+                        owner, section, child, style_flags, depth + 1u,
+                        list_depth + 1u, strcmp(name, "ol") == 0);
                     if (rc != QW_EBOOK_OK) {
                         epub_layout_paragraph_builder_dispose(&paragraph);
                         return rc;
@@ -1154,11 +1155,12 @@ static int epub_layout_collect_flow(QwEpubLayoutOwner *owner,
         }
         if (strcmp(epub_local_name(tag), "ul") == 0 ||
             strcmp(epub_local_name(tag), "ol") == 0) {
-                    int rc = epub_layout_flush_paragraph(owner, section, pending, 0u,
+            int ordered = strcmp(epub_local_name(tag), "ol") == 0;
+            int rc = epub_layout_flush_paragraph(owner, section, pending, 0u,
                                                  style_flags);
             if (rc != QW_EBOOK_OK) return rc;
             rc = epub_layout_list_block(owner, section, node, style_flags,
-                                        depth + 1u, 0u);
+                                        depth + 1u, 0u, ordered);
             if (rc != QW_EBOOK_OK) return rc;
             continue;
         }
