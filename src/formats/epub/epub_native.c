@@ -800,6 +800,8 @@ static int epub_layout_table_row(QwEpubLayoutOwner *owner,
         }
         {
             size_t cell_start = paragraph.run_count;
+            const char *cell_name = epub_local_name(cell_tag);
+            int header = strcmp(cell_name, "th") == 0;
             rc = epub_layout_collect_inline(owner, &paragraph,
                                             qw_xml_down(cell), style_flags,
                                             NULL, depth + 1u);
@@ -810,6 +812,9 @@ static int epub_layout_table_row(QwEpubLayoutOwner *owner,
             if (paragraph.run_count > cell_start) {
                 paragraph.runs[cell_start].style_flags |=
                     QW_EPUB_STYLE_TABLE_CELL;
+                if (header)
+                    paragraph.runs[cell_start].style_flags |=
+                        QW_EPUB_STYLE_TABLE_HEADER;
             }
         }
     }
