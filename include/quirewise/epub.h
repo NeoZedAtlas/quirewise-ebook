@@ -37,7 +37,8 @@ typedef enum QwEpubStyleFlags {
     QW_EPUB_STYLE_LIST_ORDERED = 1u << 27,
     QW_EPUB_STYLE_DEF_TERM = 1u << 28,
     QW_EPUB_STYLE_DEF_DETAIL = 1u << 29,
-    QW_EPUB_STYLE_TABLE_CAPTION = 1u << 30
+    QW_EPUB_STYLE_TABLE_CAPTION = 1u << 30,
+    QW_EPUB_STYLE_FIGURE = 1u << 31
 } QwEpubStyleFlags;
 
 /* List nesting depth is stored in style bits 11..18 (0 = outermost list). */

@@ -1173,6 +1173,51 @@ static int epub_layout_collect_flow(QwEpubLayoutOwner *owner,
             if (rc != QW_EBOOK_OK) return rc;
             continue;
         }
+        if (strcmp(epub_local_name(tag), "figure") == 0) {
+            QwEpubParagraphBuilder figure = {0};
+            QwXmlNode *child;
+            unsigned figure_flags = style_flags | QW_EPUB_STYLE_FIGURE;
+            int rc = epub_layout_flush_paragraph(owner, section, pending, 0u,
+                                                 style_flags);
+            if (rc != QW_EBOOK_OK) return rc;
+            for (child = qw_xml_down(node); child;
+                 child = qw_xml_next(child)) {
+                const char *child_tag = qw_xml_tag(child);
+                if (child_tag &&
+                    strcmp(epub_local_name(child_tag), "figcaption") == 0)
+                    continue;
+                rc = epub_layout_collect_inline_node(
+                    owner, &figure, child,
+                    child_tag ? epub_layout_style_for_tag(child_tag,
+                                                           figure_flags)
+                              : figure_flags,
+                    NULL, depth + 1u);
+                if (rc != QW_EBOOK_OK) {
+                    epub_layout_paragraph_builder_dispose(&figure);
+                    return rc;
+                }
+            }
+            for (child = qw_xml_down(node); child;
+                 child = qw_xml_next(child)) {
+                const char *child_tag = qw_xml_tag(child);
+                if (!child_tag ||
+                    strcmp(epub_local_name(child_tag), "figcaption") != 0)
+                    continue;
+                rc = epub_layout_collect_inline_node(
+                    owner, &figure, child, figure_flags, NULL, depth + 1u);
+                if (rc != QW_EBOOK_OK) {
+                    epub_layout_paragraph_builder_dispose(&figure);
+                    return rc;
+                }
+            }
+            if (figure.run_count)
+                figure.runs[0].style_flags |= QW_EPUB_STYLE_FIGURE;
+            rc = epub_layout_flush_paragraph(owner, section, &figure, 0u,
+                                             figure_flags);
+            epub_layout_paragraph_builder_dispose(&figure);
+            if (rc != QW_EBOOK_OK) return rc;
+            continue;
+        }
         if (strcmp(epub_local_name(tag), "ul") == 0 ||
             strcmp(epub_local_name(tag), "ol") == 0) {
             int ordered = strcmp(epub_local_name(tag), "ol") == 0;
