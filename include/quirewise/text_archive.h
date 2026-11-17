@@ -46,6 +46,7 @@ typedef struct QwTextArchiveDocument {
     size_t archive_entry_index;
 } QwTextArchiveDocument;
 
+/*! Return the ABI version compiled into the installed ebook package. */
 QUIREWISE_TEXT_ARCHIVE_API uint32_t qw_text_archive_abi_version(void);
 
 /* Extracts index.txt/index.pml first, then the first matching text member with
@@ -55,6 +56,7 @@ QUIREWISE_TEXT_ARCHIVE_API uint32_t qw_text_archive_abi_version(void);
 QUIREWISE_TEXT_ARCHIVE_API QwTextArchiveStatus qw_text_archive_extract_primary(
     const void *archive_bytes, size_t archive_size, QwTextArchiveKind kind,
     QwTextArchiveDocument *out_document, const char **out_error);
+/*! Release a document returned by the parser; NULL is accepted. */
 QUIREWISE_TEXT_ARCHIVE_API void qw_text_archive_document_free(
     QwTextArchiveDocument *document);
 
@@ -64,7 +66,9 @@ QUIREWISE_TEXT_ARCHIVE_API void qw_text_archive_document_free(
 QUIREWISE_TEXT_ARCHIVE_API QwTextArchiveStatus qw_text_archive_create(
     QwTextArchiveKind kind, const void *text, size_t text_size,
     uint8_t **out_archive, size_t *out_size);
+/*! Release a buffer returned by qw_text_archive_create(); NULL is accepted. */
 QUIREWISE_TEXT_ARCHIVE_API void qw_text_archive_buffer_free(void *buffer);
+/*! Return a static human-readable name for a status code. */
 QUIREWISE_TEXT_ARCHIVE_API const char *qw_text_archive_status_string(int status);
 
 #ifdef __cplusplus

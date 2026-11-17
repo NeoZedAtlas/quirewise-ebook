@@ -51,12 +51,16 @@ int qw_mdx_probe(const void *data, size_t size);
 QwMdxStatus qw_mdx_parse(const void *data, size_t size,
                          QwMdxDocument **out_document, char *error,
                          size_t error_capacity);
+/*! Release a document returned by qw_mdx_parse(); NULL is accepted. */
 void qw_mdx_document_free(QwMdxDocument *document);
 
 /* Header metadata; strings may be NULL and are owned by the document. */
 const char *qw_mdx_document_title(const QwMdxDocument *document);
+/*! Return the header description, or NULL. */
 const char *qw_mdx_document_description(const QwMdxDocument *document);
+/*! Return the declared encoding, or NULL. */
 const char *qw_mdx_document_encoding(const QwMdxDocument *document);
+/*! Return the number of dictionary entries. */
 size_t qw_mdx_document_entry_count(const QwMdxDocument *document);
 
 /* One entry; out pointers are borrowed and remain valid until free. */
@@ -85,6 +89,7 @@ QwMdxStatus qw_mdx_document_html_with_resources(
     QwMdxDocument *document, const QwMddDocument *resources,
     const uint8_t **out_html, size_t *out_size);
 
+/*! Return one entry's HTML text; borrowed until the document is freed. */
 QwMdxStatus qw_mdx_document_text(QwMdxDocument *document,
                                  const uint8_t **out_text, size_t *out_size);
 
