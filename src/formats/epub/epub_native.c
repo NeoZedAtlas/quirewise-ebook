@@ -1173,6 +1173,21 @@ static int epub_layout_collect_flow(QwEpubLayoutOwner *owner,
             if (rc != QW_EBOOK_OK) return rc;
             continue;
         }
+        if (strcmp(epub_local_name(tag), "hr") == 0) {
+            QwEpubParagraphBuilder rule = {0};
+            int rc = epub_layout_flush_paragraph(owner, section, pending, 0u,
+                                                 style_flags);
+            if (rc != QW_EBOOK_OK) return rc;
+            if (!epub_layout_run_append(owner, &rule, "\xE2\x80\x94", 0u,
+                                        NULL)) {
+                epub_layout_paragraph_builder_dispose(&rule);
+                return QW_EBOOK_ERR_OUT_OF_MEMORY;
+            }
+            rc = epub_layout_flush_paragraph(owner, section, &rule, 7u, 0u);
+            epub_layout_paragraph_builder_dispose(&rule);
+            if (rc != QW_EBOOK_OK) return rc;
+            continue;
+        }
         if (strcmp(epub_local_name(tag), "figure") == 0) {
             QwEpubParagraphBuilder figure = {0};
             QwXmlNode *child;

@@ -61,6 +61,7 @@ typedef struct QwEpubParagraphView {
     unsigned heading_level;
     unsigned page_break_before;
     size_t run_count;
+    int horizontal_rule;
 } QwEpubParagraphView;
 
 typedef struct QwEpubRunView {

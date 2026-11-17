@@ -94,7 +94,13 @@ QwEpubStatus qw_epub_paragraph_at(const QwEpubDocument *document,
     if (paragraph_index >= section->paragraph_count)
         return QW_EPUB_ERR_INVALID_ARGUMENT;
     paragraph = &section->paragraphs[paragraph_index];
-    out_paragraph->heading_level = paragraph->heading_level;
+    if (paragraph->heading_level == 7u) {
+        out_paragraph->heading_level = 0u;
+        out_paragraph->horizontal_rule = 1;
+    } else {
+        out_paragraph->heading_level = paragraph->heading_level;
+        out_paragraph->horizontal_rule = 0;
+    }
     out_paragraph->page_break_before = paragraph->page_break_before;
     out_paragraph->run_count = paragraph->run_count;
     return QW_EPUB_OK;
