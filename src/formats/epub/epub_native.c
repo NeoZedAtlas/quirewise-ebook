@@ -674,7 +674,9 @@ static int epub_layout_collect_inline_node(QwEpubLayoutOwner *owner,
             const char *href;
             if (strcmp(epub_local_name(tag), "a") == 0) {
                 href = qw_xml_att(node, "href");
-                if (epub_layout_external_link(href)) child_link = href;
+                if (epub_layout_external_link(href) ||
+                    (href && href[0] == '#'))
+                    child_link = href;
             }
             {
                 int rc = epub_layout_collect_inline(owner, builder,
@@ -787,7 +789,7 @@ static int epub_layout_tag_is_block(const char *tag)
            strcmp(name, "h6") == 0 || strcmp(name, "li") == 0 ||
            strcmp(name, "pre") == 0 || strcmp(name, "dt") == 0 ||
            strcmp(name, "dd") == 0 || strcmp(name, "figcaption") == 0 ||
-           strcmp(name, "address") == 0;
+           strcmp(name, "address") == 0 || strcmp(name, "aside") == 0;
 }
 
 static int epub_layout_flush_paragraph(QwEpubLayoutOwner *owner,
