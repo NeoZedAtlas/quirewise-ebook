@@ -94,12 +94,24 @@ QwEpubStatus qw_epub_paragraph_at(const QwEpubDocument *document,
     if (paragraph_index >= section->paragraph_count)
         return QW_EPUB_ERR_INVALID_ARGUMENT;
     paragraph = &section->paragraphs[paragraph_index];
+    out_paragraph->footnote = 0;
+    out_paragraph->anchor_id = NULL;
+    out_paragraph->anchor_id_size = 0u;
     if (paragraph->heading_level == 7u) {
         out_paragraph->heading_level = 0u;
         out_paragraph->horizontal_rule = 1;
+    } else if (paragraph->heading_level == 8u) {
+        out_paragraph->heading_level = 0u;
+        out_paragraph->horizontal_rule = 0;
+        out_paragraph->footnote = 1;
     } else {
         out_paragraph->heading_level = paragraph->heading_level;
         out_paragraph->horizontal_rule = 0;
+    }
+    if (paragraph->run_count && paragraph->runs[0].link_target &&
+        strncmp(paragraph->runs[0].link_target, "id:", 3u) == 0) {
+        out_paragraph->anchor_id = paragraph->runs[0].link_target + 3u;
+        out_paragraph->anchor_id_size = strlen(out_paragraph->anchor_id);
     }
     out_paragraph->page_break_before = paragraph->page_break_before;
     out_paragraph->run_count = paragraph->run_count;
@@ -128,8 +140,13 @@ QwEpubStatus qw_epub_run_at(const QwEpubDocument *document,
     out_run->utf8_text = run->utf8_text;
     out_run->text_size = run->text_size;
     out_run->style_flags = run->style_flags;
-    out_run->link_target = run->link_target;
-    out_run->link_target_size = run->link_target
-        ? strlen(run->link_target) : 0u;
+    if (run->link_target && strncmp(run->link_target, "id:", 3u) == 0) {
+        out_run->link_target = NULL;
+        out_run->link_target_size = 0u;
+    } else {
+        out_run->link_target = run->link_target;
+        out_run->link_target_size = run->link_target
+            ? strlen(run->link_target) : 0u;
+    }
     return QW_EPUB_OK;
 }

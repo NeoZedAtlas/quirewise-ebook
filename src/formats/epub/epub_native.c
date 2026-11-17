@@ -621,6 +621,23 @@ static int epub_layout_collect_inline(QwEpubLayoutOwner *owner,
                                        QwXmlNode *nodes, unsigned style_flags,
                                        const char *link_target, size_t depth);
 
+static int epub_node_has_token(const QwXmlNode *node, const char *name,
+                                const char *token)
+{
+    size_t count;
+    size_t index;
+    if (!node || !name || !token) return 0;
+    count = qw_xml_attribute_count(node);
+    for (index = 0u; index < count; ++index) {
+        const char *local = qw_xml_attribute_local_name(node, index);
+        const char *value = qw_xml_attribute_value(node, index);
+        if (local && value && strcmp(local, name) == 0 &&
+            strstr(value, token))
+            return 1;
+    }
+    return 0;
+}
+
 static int epub_layout_collect_inline_node(QwEpubLayoutOwner *owner,
                                            QwEpubParagraphBuilder *builder,
                                            QwXmlNode *node,
@@ -1243,6 +1260,35 @@ static int epub_layout_collect_flow(QwEpubLayoutOwner *owner,
             if (rc != QW_EBOOK_OK) return rc;
             rc = epub_layout_list_block(owner, section, node, style_flags,
                                         depth + 1u, 0u, ordered);
+            if (rc != QW_EBOOK_OK) return rc;
+            continue;
+        }
+        if (strcmp(epub_local_name(tag), "aside") == 0 &&
+            epub_node_has_token(node, "type", "footnote")) {
+            QwEpubParagraphBuilder footnote = {0};
+            const char *anchor_id = qw_xml_att(node, "id");
+            int rc = epub_layout_flush_paragraph(owner, section, pending, 0u,
+                                                 style_flags);
+            if (rc != QW_EBOOK_OK) return rc;
+            rc = epub_layout_collect_inline(owner, &footnote,
+                qw_xml_down(node), style_flags, NULL, depth + 1u);
+            if (rc == QW_EBOOK_OK && footnote.run_count && anchor_id &&
+                anchor_id[0]) {
+                size_t id_size = strlen(anchor_id);
+                char *target = (char *)malloc(id_size + 4u);
+                if (!target) {
+                    epub_layout_paragraph_builder_dispose(&footnote);
+                    return QW_EBOOK_ERR_OUT_OF_MEMORY;
+                }
+                memcpy(target, "id:", 3u);
+                memcpy(target + 3u, anchor_id, id_size + 1u);
+                free((void *)footnote.runs[0].link_target);
+                footnote.runs[0].link_target = target;
+            }
+            if (rc == QW_EBOOK_OK)
+                rc = epub_layout_flush_paragraph(owner, section, &footnote,
+                                                 8u, style_flags);
+            epub_layout_paragraph_builder_dispose(&footnote);
             if (rc != QW_EBOOK_OK) return rc;
             continue;
         }
