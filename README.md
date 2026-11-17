@@ -1,7 +1,8 @@
 # quirewise-ebook
 
-Read-only C11 readers for EPUB/KEPUB, MOBI/AZW3/AZW, FB2, PML, HTMLZ, TXTZ,
-PMLZ and MDict dictionaries (MDX with its MDD resource companion).
+C11 readers for EPUB/KEPUB, MOBI/AZW3/AZW, FB2, PML, HTMLZ, TXTZ, PMLZ and MDict
+dictionaries (MDX with its MDD resource companion), plus HTMLZ/TXTZ/PMLZ
+container writers.
 
 `Quirewise::Ebook` (CMake package `QuirewiseEbook`) is an independent,
 MIT-licensed C11 library. It is not dependency-free: its CMake config requires
@@ -14,9 +15,12 @@ the installed `Quirewise::Runtime`, `Quirewise::Archive`, `Quirewise::Charset`,
 - **EPUB / KEPUB** — opens the OCF ZIP container, follows
   `META-INF/container.xml` to the OPF package, walks the spine and returns
   sections, paragraphs and styled text runs. KEPUB books use the same structure.
-  Chapters with content the layout cannot represent (images, tables, lists,
-  SVG, math, media, embedded objects) are skipped; the rest of the book is
-  still returned.
+  Tables (`th`, `caption`, `colspan`, `rowspan`), lists (including nesting),
+  blockquotes, definition lists, `<pre>`, images, `figure/figcaption`, `<hr>`
+  and footnote references are preserved. Footnote bodies become
+  `epub-footnote` paragraphs with an `id`; backlinks are not generated. Chapters
+  containing SVG/canvas/math/media or embedded objects are skipped; the rest of
+  the book is still returned.
 - **MOBI 7 / AZW3 / AZW** — parses the PalmDB/PalmDOC container and returns
   plain UTF-8 text for uncompressed and PalmDOC-compressed books whose text is
   CP1252 or UTF-8. Markup is flattened to paragraphs.
@@ -38,9 +42,10 @@ the installed `Quirewise::Runtime`, `Quirewise::Archive`, `Quirewise::Charset`,
   writes TXTZ/PMLZ with `qw_text_archive_create`.
 
 Every reader is read-only except the HTMLZ and TXTZ/PMLZ container writers
-above. There is no EPUB/MOBI/AZW3/FB2/MDX writer, no PDF
-emission, no rendering, no DRM support, no HUFF/CDIC decompression, and no
-MDict engine 1.2 (LZO) or register-code encrypted dictionary support.
+above. There is no EPUB/MOBI/AZW3/FB2/MDX writer, no PDF emission, no rendering,
+no DRM support, no HUFF/CDIC decompression, and no MDict engine 1.2 (LZO) or
+register-code encrypted dictionary support. EPUB output (a minimal EPUB 2
+package) lives in `quirewise-document`/`quirewise-pipeline`, not here.
 
 ## Requirements
 
