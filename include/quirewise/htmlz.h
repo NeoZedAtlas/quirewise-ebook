@@ -41,6 +41,7 @@ typedef struct QwHtmlzDocument {
     size_t archive_entry_index;
 } QwHtmlzDocument;
 
+/*! Return the ABI version compiled into the installed ebook package. */
 QUIREWISE_HTMLZ_API uint32_t qw_htmlz_abi_version(void);
 
 /* Selects index.html/index.htm first, then the first supported .html, .htm,
@@ -49,6 +50,7 @@ QUIREWISE_HTMLZ_API uint32_t qw_htmlz_abi_version(void);
 QUIREWISE_HTMLZ_API QwHtmlzStatus qw_htmlz_extract_primary_document(
     const void *archive_bytes, size_t archive_size, QwHtmlzDocument *out_document,
     const char **out_error);
+/*! Release a document returned by the parser; NULL is accepted. */
 QUIREWISE_HTMLZ_API void qw_htmlz_document_free(QwHtmlzDocument *document);
 
 /* Build an HTMLZ archive whose primary member is index.html. The returned
@@ -57,7 +59,9 @@ QUIREWISE_HTMLZ_API QwHtmlzStatus qw_htmlz_create(const void *html,
                                                   size_t html_size,
                                                   uint8_t **out_archive,
                                                   size_t *out_size);
+/*! Release a buffer returned by qw_htmlz_create(); NULL is accepted. */
 QUIREWISE_HTMLZ_API void qw_htmlz_buffer_free(void *buffer);
+/*! Return a static human-readable name for a status code. */
 QUIREWISE_HTMLZ_API const char *qw_htmlz_status_string(int status);
 
 #ifdef __cplusplus

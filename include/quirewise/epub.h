@@ -78,15 +78,20 @@ typedef struct QwEpubRunView {
 /* The parser owns returned text; views remain valid until the document is freed. */
 QwEpubStatus qw_epub_parse(const void *data, size_t size,
                            QwEpubDocument **out_document);
+/*! Release a document returned by the parser; NULL is accepted. */
 void qw_epub_document_free(QwEpubDocument *document);
+/*! Return the number of sections (spine items). */
 size_t qw_epub_section_count(const QwEpubDocument *document);
+/*! Fill one section view by index. */
 QwEpubStatus qw_epub_section_at(const QwEpubDocument *document,
                                 size_t section_index,
                                 QwEpubSectionView *out_section);
+/*! Fill one paragraph view within a section. */
 QwEpubStatus qw_epub_paragraph_at(const QwEpubDocument *document,
                                   size_t section_index,
                                   size_t paragraph_index,
                                   QwEpubParagraphView *out_paragraph);
+/*! Fill one text run within a paragraph. */
 QwEpubStatus qw_epub_run_at(const QwEpubDocument *document,
                             size_t section_index,
                             size_t paragraph_index,

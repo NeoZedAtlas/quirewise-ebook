@@ -32,12 +32,16 @@ typedef enum QwMddStatus {
 /* Cheap content probe: the UTF-16 "<Library_Data" root element. */
 int qw_mdd_probe(const void *data, size_t size);
 
+/*! Parse an MDD resource archive; error receives a short diagnostic. */
 QwMddStatus qw_mdd_parse(const void *data, size_t size,
                          QwMddDocument **out_document, char *error,
                          size_t error_capacity);
+/*! Release a document returned by the parser; NULL is accepted. */
 void qw_mdd_document_free(QwMddDocument *document);
 
+/*! Return the archive title, or NULL. */
 const char *qw_mdd_document_title(const QwMddDocument *document);
+/*! Return the number of embedded resources. */
 size_t qw_mdd_document_resource_count(const QwMddDocument *document);
 
 /* Borrowed resource name (UTF-8) and payload; both live in the document. */

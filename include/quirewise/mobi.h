@@ -29,11 +29,15 @@ typedef enum QwMobiKind {
 
 /* Parse the supported PalmDOC/MOBI text record into owned UTF-8 text. */
 int qw_mobi_probe(const void *data, size_t size);
+/*! Parse a MOBI/AZW3 file into a document. */
 QwMobiStatus qw_mobi_parse(const void *data, size_t size,
                            QwMobiDocument **out_document);
+/*! Return the container kind (MOBI, AZW3, PalmDOC). */
 QwMobiKind qw_mobi_document_kind(const QwMobiDocument *document);
+/*! Return the extracted text and its size; borrowed until free. */
 const uint8_t *qw_mobi_document_text(const QwMobiDocument *document,
                                      size_t *out_size);
+/*! Release a document returned by the parser; NULL is accepted. */
 void qw_mobi_document_free(QwMobiDocument *document);
 
 #ifdef __cplusplus

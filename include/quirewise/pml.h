@@ -36,13 +36,16 @@ typedef struct QwPmlDocument {
     size_t text_size;
 } QwPmlDocument;
 
+/*! Return the ABI version compiled into the installed ebook package. */
 QUIREWISE_PML_API uint32_t qw_pml_abi_version(void);
 
 /* Accepts non-empty PML input up to 64 MiB. It handles paragraph, newline,
  * tab, escaped backslash, and basic letter commands. */
 QUIREWISE_PML_API QwPmlStatus qw_pml_parse(
     const void *pml_bytes, size_t pml_size, QwPmlDocument *out_document);
+/*! Release a document returned by the parser; NULL is accepted. */
 QUIREWISE_PML_API void qw_pml_document_free(QwPmlDocument *document);
+/*! Return a static human-readable name for a status code. */
 QUIREWISE_PML_API const char *qw_pml_status_string(int status);
 
 #ifdef __cplusplus

@@ -21,10 +21,13 @@ typedef enum QwFB2Status {
     QW_FB2_ERROR_UNKNOWN = -100
 } QwFB2Status;
 
+/*! Parse an FB2 XML document. */
 QwFB2Status qw_fb2_parse(const void *data, size_t size,
                          QwFB2Document **out_document);
+/*! Return the rendered HTML and its size; borrowed until free. */
 const uint8_t *qw_fb2_document_html(const QwFB2Document *document,
                                    size_t *out_size);
+/*! Release a document returned by the parser; NULL is accepted. */
 void qw_fb2_document_free(QwFB2Document *document);
 
 #ifdef __cplusplus
