@@ -65,6 +65,7 @@ void qw_mdx_document_free(QwMdxDocument *document)
     if (!document) return;
     qw_mdict_close(document->container);
     free(document->html);
+    free(document->resource_html);
     free(document->text);
     free(document);
 }
